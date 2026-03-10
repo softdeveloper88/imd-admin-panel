@@ -1,0 +1,8 @@
+node_modules/
+admin-settings.json
+content/
+uploads/
+.DS_Store
+*.DS_Store
+.env
+

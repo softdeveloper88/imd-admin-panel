@@ -11,10 +11,113 @@ const zlib = require('zlib');
 const { promisify } = require('util');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const execFileAsync = promisify(execFile);
 
+const AUTH_COOKIE_NAME = 'imd_admin_auth';
+const AUTH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_SETTINGS_PATH = path.join(__dirname, 'admin-settings.json');
+const DEFAULT_ADMIN_USERNAME = process.env.IMD_ADMIN_USERNAME || process.env.ADMIN_USERNAME || 'admin';
+const DEFAULT_ADMIN_PASSWORD = process.env.IMD_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'admin123';
+const DEFAULT_ADMIN_COOKIE_SECRET = process.env.IMD_ADMIN_COOKIE_SECRET || process.env.ADMIN_COOKIE_SECRET || crypto.randomBytes(24).toString('hex');
+const PASSWORD_HASH_ITERATIONS = 120000;
+const PASSWORD_HASH_LENGTH = 32;
+const PASSWORD_HASH_DIGEST = 'sha256';
+
+let adminSettingsCache = null;
+
 let SQL;
+
+function hashAdminPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = crypto.pbkdf2Sync(String(password), salt, PASSWORD_HASH_ITERATIONS, PASSWORD_HASH_LENGTH, PASSWORD_HASH_DIGEST).toString('hex');
+  return { salt, hash };
+}
+
+function verifyAdminPassword(password, passwordSalt, passwordHash) {
+  if (!passwordSalt || !passwordHash) return false;
+  const computed = crypto.pbkdf2Sync(String(password), passwordSalt, PASSWORD_HASH_ITERATIONS, PASSWORD_HASH_LENGTH, PASSWORD_HASH_DIGEST).toString('hex');
+  const left = Buffer.from(computed, 'hex');
+  const right = Buffer.from(String(passwordHash), 'hex');
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function buildDefaultAdminSettings() {
+  const passwordRecord = hashAdminPassword(DEFAULT_ADMIN_PASSWORD);
+  return {
+    username: DEFAULT_ADMIN_USERNAME,
+    passwordSalt: passwordRecord.salt,
+    passwordHash: passwordRecord.hash,
+    cookieSecret: DEFAULT_ADMIN_COOKIE_SECRET,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeAdminSettings(rawSettings) {
+  const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+  const username = String(settings.username || '').trim() || DEFAULT_ADMIN_USERNAME;
+  const cookieSecret = String(settings.cookieSecret || '').trim() || DEFAULT_ADMIN_COOKIE_SECRET;
+  const passwordSalt = String(settings.passwordSalt || '').trim();
+  const passwordHash = String(settings.passwordHash || '').trim();
+
+  if (passwordSalt && passwordHash) {
+    return {
+      username,
+      passwordSalt,
+      passwordHash,
+      cookieSecret,
+      updatedAt: settings.updatedAt || new Date().toISOString(),
+    };
+  }
+
+  return buildDefaultAdminSettings();
+}
+
+function writeAdminSettings(settings) {
+  adminSettingsCache = normalizeAdminSettings(settings);
+  fs.writeFileSync(ADMIN_SETTINGS_PATH, `${JSON.stringify(adminSettingsCache, null, 2)}\n`, 'utf-8');
+  return adminSettingsCache;
+}
+
+function getAdminSettings() {
+  if (adminSettingsCache) return adminSettingsCache;
+
+  if (!fs.existsSync(ADMIN_SETTINGS_PATH)) {
+    return writeAdminSettings(buildDefaultAdminSettings());
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(ADMIN_SETTINGS_PATH, 'utf-8'));
+    adminSettingsCache = normalizeAdminSettings(parsed);
+  } catch (_) {
+    adminSettingsCache = buildDefaultAdminSettings();
+    writeAdminSettings(adminSettingsCache);
+  }
+
+  return adminSettingsCache;
+}
+
+function updateAdminSettings(changes) {
+  const current = getAdminSettings();
+  const next = {
+    ...current,
+    username: changes.username != null ? String(changes.username).trim() : current.username,
+    cookieSecret: changes.cookieSecret != null ? String(changes.cookieSecret).trim() : current.cookieSecret,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (changes.password) {
+    const passwordRecord = hashAdminPassword(changes.password);
+    next.passwordSalt = passwordRecord.salt;
+    next.passwordHash = passwordRecord.hash;
+  }
+
+  return writeAdminSettings(next);
+}
+
+function usesDefaultAdminPassword() {
+  const settings = getAdminSettings();
+  return verifyAdminPassword(DEFAULT_ADMIN_PASSWORD, settings.passwordSalt, settings.passwordHash);
+}
 
 // ----- Encryption -----
 const SECRET = Buffer.from('hs;d,hghdk[;ak', 'utf-8');
@@ -243,7 +346,7 @@ function getReferenceContent(db, docId) {
     if (!row) continue;
 
     const salt = String(row.id ?? docId);
-    const contentCandidates = ['doc', 'content', 'html', 'body', 'text', 'data'];
+    const contentCandidates = ['doc', 'content', 'mainContent', 'html', 'body', 'text', 'data'];
     let html = '';
 
     for (const key of contentCandidates) {
@@ -284,6 +387,94 @@ function getReferenceContent(db, docId) {
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+function parseCookies(cookieHeader) {
+  return String(cookieHeader || '')
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .reduce((acc, part) => {
+      const eqIndex = part.indexOf('=');
+      if (eqIndex === -1) return acc;
+      const key = decodeURIComponent(part.slice(0, eqIndex).trim());
+      const value = decodeURIComponent(part.slice(eqIndex + 1).trim());
+      acc[key] = value;
+      return acc;
+    }, {});
+}
+
+function createAuthSignature(payload) {
+  return crypto.createHmac('sha256', getAdminSettings().cookieSecret).update(payload).digest('hex');
+}
+
+function createAuthToken(username) {
+  const payload = Buffer.from(JSON.stringify({ username, expiresAt: Date.now() + AUTH_TTL_MS }), 'utf-8').toString('base64url');
+  return `${payload}.${createAuthSignature(payload)}`;
+}
+
+function readAuthSession(req) {
+  try {
+    const token = parseCookies(req.headers.cookie)[AUTH_COOKIE_NAME];
+    if (!token) return null;
+
+    const [payload, signature] = token.split('.');
+    if (!payload || !signature) return null;
+    if (createAuthSignature(payload) !== signature) return null;
+
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
+    if (!parsed?.username || !parsed?.expiresAt || parsed.expiresAt < Date.now()) return null;
+
+    return { username: parsed.username };
+  } catch (_) {
+    return null;
+  }
+}
+
+function sanitizeNextPath(nextPath) {
+  const candidate = String(nextPath || '').trim();
+  if (!candidate.startsWith('/')) return '/dashboard';
+  if (candidate.startsWith('//')) return '/dashboard';
+  if (candidate.startsWith('/api/')) return '/dashboard';
+  return candidate || '/dashboard';
+}
+
+function attachAdminSession(req, res, next) {
+  req.admin = readAuthSession(req);
+  res.locals.isAuthenticated = !!req.admin;
+  res.locals.currentAdminUser = req.admin?.username || '';
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (req.admin) return next();
+
+  if (req.method === 'GET' || wantsHtmlResponse(req)) {
+    return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl || '/dashboard')}`);
+  }
+
+  return res.status(401).json({ error: 'Authentication required' });
+}
+
+function setAuthCookie(res, username) {
+  res.cookie(AUTH_COOKIE_NAME, createAuthToken(username), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: AUTH_TTL_MS,
+    path: '/',
+  });
+}
+
+function clearAuthCookie(res) {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  });
+}
+
+app.use(attachAdminSession);
 app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -415,25 +606,64 @@ function getVisibleEntries(dirPath) {
     .filter(entry => entry.name !== '__MACOSX' && !entry.name.startsWith('.'));
 }
 
+function inspectPackageStructure(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    return {
+      entries: [],
+      directItemCount: 0,
+      hasDbFile: false,
+      hasGuideConfig: false,
+      hasEpubStructure: false,
+      hasMediaDir: false,
+      hasHtmlFiles: false,
+    };
+  }
+
+  const entries = getVisibleEntries(dirPath);
+  const names = new Set(entries.map(entry => entry.name.toLowerCase()));
+  const mediaDirs = new Set(['media-e', 'resources-e', 'images', 'image', 'base']);
+
+  return {
+    entries,
+    directItemCount: entries.length,
+    hasDbFile: entries.some(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.db')),
+    hasGuideConfig: names.has('bt_config.txt'),
+    hasEpubStructure: names.has('meta-inf') || names.has('oebps'),
+    hasMediaDir: entries.some(entry => entry.isDirectory() && mediaDirs.has(entry.name.toLowerCase())),
+    hasHtmlFiles: entries.some(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.html')),
+  };
+}
+
+function isRecognizedPackageStructure(summary) {
+  return summary.hasDbFile || summary.hasGuideConfig || (summary.hasEpubStructure && (summary.hasHtmlFiles || summary.hasMediaDir));
+}
+
 function hasExtractedContent(dirPath) {
   if (!fs.existsSync(dirPath)) return false;
   return getVisibleEntries(dirPath).length > 0;
 }
 
 function resolveExtractedPackage(tempExtractDir, fallbackName) {
-  const entries = getVisibleEntries(tempExtractDir);
+  let currentDir = tempExtractDir;
+  let packageName = sanitizePackageName(fallbackName);
 
-  if (entries.length === 1 && entries[0].isDirectory()) {
-    return {
-      packageName: sanitizePackageName(entries[0].name),
-      sourceDir: path.join(tempExtractDir, entries[0].name),
-    };
+  for (let depth = 0; depth < 6; depth++) {
+    const summary = inspectPackageStructure(currentDir);
+    if (isRecognizedPackageStructure(summary)) {
+      return { packageName, sourceDir: currentDir };
+    }
+
+    const directories = summary.entries.filter(entry => entry.isDirectory());
+    if (summary.entries.length === 1 && directories.length === 1) {
+      currentDir = path.join(currentDir, directories[0].name);
+      packageName = sanitizePackageName(directories[0].name);
+      continue;
+    }
+
+    break;
   }
 
-  return {
-    packageName: sanitizePackageName(fallbackName),
-    sourceDir: tempExtractDir,
-  };
+  throw new Error('Zip upload did not contain a recognized package structure');
 }
 
 function mapZipError(error) {
@@ -539,6 +769,11 @@ function importFolderUpload(files, packageNameOverride) {
     fs.copyFileSync(file.path, targetPath);
   }
 
+  if (!isRecognizedPackageStructure(inspectPackageStructure(destDir))) {
+    fs.rmSync(destDir, { recursive: true, force: true });
+    throw new Error('Folder upload did not contain a recognized package structure');
+  }
+
   return packageName;
 }
 
@@ -550,7 +785,7 @@ function wantsHtmlResponse(req) {
 function buildUploadRedirectUrl(message, isError) {
   const params = new URLSearchParams();
   params.set(isError ? 'uploadError' : 'uploadSuccess', message);
-  return `/upload?${params.toString()}`;
+  return `/dashboard?${params.toString()}`;
 }
 
 function respondUploadOutcome(req, res, statusCode, message, isError) {
@@ -565,11 +800,44 @@ function respondUploadOutcome(req, res, statusCode, message, isError) {
   return res.json({ ok: true, message });
 }
 
+function respondDashboardSettings(req, res, statusCode, message, isError) {
+  if (wantsHtmlResponse(req)) {
+    const params = new URLSearchParams();
+    params.set(isError ? 'settingsError' : 'settingsSuccess', message);
+    return res.redirect(`/dashboard?${params.toString()}`);
+  }
+
+  if (isError) {
+    return res.status(statusCode).json({ error: message });
+  }
+
+  return res.json({ ok: true, message });
+}
+
 function getPackageInfo(pkgName) {
   const pkgDir = path.join(CONTENT_DIR, pkgName);
   if (!fs.existsSync(pkgDir)) return null;
 
-  const info = { name: pkgName, path: pkgDir, hasDb: false, hasMedia: false, hasIcon: false, questionCount: 0, subjectCount: 0, systemCount: 0, mediaCount: 0, tables: [], type: 'other', category: 'General' };
+  const structure = inspectPackageStructure(pkgDir);
+  const info = {
+    name: pkgName,
+    path: pkgDir,
+    hasDb: false,
+    hasMedia: false,
+    hasIcon: false,
+    questionCount: 0,
+    subjectCount: 0,
+    systemCount: 0,
+    mediaCount: 0,
+    tables: [],
+    type: 'other',
+    category: 'General',
+    directItemCount: structure.directItemCount,
+    updatedAt: fs.statSync(pkgDir).mtime.toISOString(),
+    isValidPackage: false,
+    issue: '',
+    statusLabel: 'Needs Attention',
+  };
   const files = fs.readdirSync(pkgDir);
   const dbFile = files.find(f => f.endsWith('.db'));
 
@@ -637,8 +905,8 @@ function getPackageInfo(pkgName) {
     } catch (e) { console.error('DB read error:', e.message); }
   }
 
-  // Check for media in media-E/ or OEBPS/images/ or images/
-  const mediaDirs = ['media-E', 'OEBPS/images', 'images', 'OEBPS/Images'];
+  // Check for media in media-E/ or Resources-E/ or OEBPS/images/ or images/
+  const mediaDirs = ['media-E', 'Resources-E', 'OEBPS/images', 'images', 'Images', 'OEBPS/Images'];
   for (const md of mediaDirs) {
     const mediaDir = path.join(pkgDir, md);
     if (fs.existsSync(mediaDir)) {
@@ -676,55 +944,306 @@ function getPackageInfo(pkgName) {
     } catch (e) { console.error('BT_config parse error for ' + pkgName + ':', e.message); }
   }
 
+  info.isValidPackage = isRecognizedPackageStructure(structure);
+  info.statusLabel = info.isValidPackage ? 'Ready' : 'Needs Attention';
+  info.issue = info.isValidPackage ? '' : 'Missing database or supported guide/package structure';
+
   return info;
 }
 
-function loadDashboardPackages() {
+function loadDashboardEntries() {
   return fs.readdirSync(CONTENT_DIR)
     .filter(f => fs.statSync(path.join(CONTENT_DIR, f)).isDirectory())
     .map(getPackageInfo)
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.isValidPackage !== b.isValidPackage) return a.isValidPackage ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+}
+
+function loadDashboardPackages() {
+  return loadDashboardEntries().filter(pkg => pkg.isValidPackage);
+}
+
+function formatBytes(bytes) {
+  const size = Number(bytes || 0);
+  if (!size) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function countStaleUploads() {
+  let staleCount = 0;
+  if (!fs.existsSync(UPLOADS_DIR)) return staleCount;
+
+  try {
+    const files = fs.readdirSync(UPLOADS_DIR);
+    for (const fileName of files) {
+      try {
+        const stat = fs.statSync(path.join(UPLOADS_DIR, fileName));
+        if (stat.isFile() && stat.size === 0) staleCount++;
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  return staleCount;
+}
+
+function parsePositiveInt(value, fallbackValue) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
+}
+
+function normalizeDashboardQuery(query) {
+  const allowedPageSizes = new Set([10, 25, 50, 100]);
+  const pageSize = parsePositiveInt(query.pageSize, 10);
+
+  return {
+    q: String(query.q || '').trim(),
+    type: String(query.type || '').trim().toLowerCase(),
+    category: String(query.category || '').trim(),
+    page: parsePositiveInt(query.page, 1),
+    invalidPage: parsePositiveInt(query.invalidPage, 1),
+    pageSize: allowedPageSizes.has(pageSize) ? pageSize : 10,
+  };
+}
+
+function matchesDashboardSearch(entry, searchTerm) {
+  if (!searchTerm) return true;
+
+  const haystack = [
+    entry.name,
+    entry.type,
+    entry.category,
+    entry.statusLabel,
+    entry.issue,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(searchTerm);
+}
+
+function filterDashboardEntries(entries, filters) {
+  const searchTerm = filters.q.toLowerCase();
+
+  return entries.filter(entry => {
+    if (!matchesDashboardSearch(entry, searchTerm)) return false;
+    if (filters.type && entry.type !== filters.type) return false;
+    if (filters.category && entry.category !== filters.category) return false;
+    return true;
+  });
+}
+
+function paginateItems(items, page, pageSize) {
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPage = Math.min(Math.max(page, 1), totalPages);
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
+  return {
+    items: items.slice(startIndex, endIndex),
+    totalItems,
+    totalPages,
+    page: currentPage,
+    pageSize,
+    startItem: totalItems === 0 ? 0 : startIndex + 1,
+    endItem: endIndex,
+  };
+}
+
+function buildDashboardHref(currentFilters, updates = {}) {
+  const merged = { ...currentFilters, ...updates };
+  const params = new URLSearchParams();
+
+  if (merged.q) params.set('q', merged.q);
+  if (merged.type) params.set('type', merged.type);
+  if (merged.category) params.set('category', merged.category);
+  if (merged.page && merged.page !== 1) params.set('page', String(merged.page));
+  if (merged.invalidPage && merged.invalidPage !== 1) params.set('invalidPage', String(merged.invalidPage));
+  if (merged.pageSize && merged.pageSize !== 10) params.set('pageSize', String(merged.pageSize));
+
+  const queryString = params.toString();
+  return queryString ? `/dashboard?${queryString}` : '/dashboard';
+}
+
+function buildDashboardModel(query = {}) {
+  const filters = normalizeDashboardQuery(query);
+  const adminSettings = getAdminSettings();
+  const entries = loadDashboardEntries();
+  const packages = entries.filter(entry => entry.isValidPackage);
+  const invalidPackages = entries.filter(entry => !entry.isValidPackage);
+
+  const decorateEntry = entry => ({
+    ...entry,
+    sizeLabel: formatBytes(entry.dbSizeBytes),
+    updatedLabel: new Date(entry.updatedAt).toLocaleString(),
+  });
+
+  const decoratedPackages = packages.map(decorateEntry);
+  const decoratedInvalidPackages = invalidPackages.map(decorateEntry);
+  const filteredPackages = filterDashboardEntries(decoratedPackages, filters);
+  const filteredInvalidPackages = filterDashboardEntries(decoratedInvalidPackages, filters);
+  const packagesPage = paginateItems(filteredPackages, filters.page, filters.pageSize);
+  const invalidPackagesPage = paginateItems(filteredInvalidPackages, filters.invalidPage, filters.pageSize);
+  const categories = [...new Set(decoratedPackages.map(entry => entry.category).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+  const types = [...new Set(decoratedPackages.map(entry => entry.type).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+
+  return {
+    packages: packagesPage.items,
+    invalidPackages: invalidPackagesPage.items,
+    packagesPage,
+    invalidPackagesPage,
+    dashboardFilters: filters,
+    hasActiveFilters: Boolean(filters.q || filters.type || filters.category),
+    authSettings: {
+      username: adminSettings.username,
+      updatedAtLabel: new Date(adminSettings.updatedAt).toLocaleString(),
+      usesDefaultPassword: usesDefaultAdminPassword(),
+    },
+    filterOptions: {
+      categories,
+      types,
+      pageSizes: [10, 25, 50, 100],
+    },
+    staleCount: countStaleUploads(),
+    stats: {
+      totalEntries: entries.length,
+      readyPackages: packages.length,
+      invalidPackages: invalidPackages.length,
+      totalQuestions: packages.reduce((sum, entry) => sum + Number(entry.questionCount || 0), 0),
+      totalMedia: packages.reduce((sum, entry) => sum + Number(entry.mediaCount || 0), 0),
+    },
+  };
+}
+
+function renderDashboard(req, res, overrides = {}) {
+  const dashboardModel = buildDashboardModel(req.query);
+  res.render('dashboard', {
+    ...dashboardModel,
+    buildDashboardHref: updates => buildDashboardHref(dashboardModel.dashboardFilters, updates),
+    uploadError: overrides.uploadError ?? req.query.uploadError ?? '',
+    uploadSuccess: overrides.uploadSuccess ?? req.query.uploadSuccess ?? '',
+    settingsError: overrides.settingsError ?? req.query.settingsError ?? '',
+    settingsSuccess: overrides.settingsSuccess ?? req.query.settingsSuccess ?? '',
+  });
 }
 
 // ----- Admin routes -----
 app.get('/', (req, res) => {
-  res.redirect('/upload');
+  res.redirect(req.admin ? '/dashboard' : '/login');
 });
 
 app.get('/upload', (req, res) => {
-  const packages = loadDashboardPackages();
+  res.redirect(req.admin ? '/dashboard' : '/login?next=%2Fdashboard');
+});
 
-  // Count stale zero-byte files in uploads dir
-  let staleCount = 0;
-  const uploadsDir = path.join(__dirname, 'uploads');
-  if (fs.existsSync(uploadsDir)) {
-    try {
-      const files = fs.readdirSync(uploadsDir);
-      for (const f of files) {
-        try {
-          const stat = fs.statSync(path.join(uploadsDir, f));
-          if (stat.isFile() && stat.size === 0) staleCount++;
-        } catch (_) {}
-      }
-    } catch (_) {}
+app.get('/login', (req, res) => {
+  const nextPath = sanitizeNextPath(req.query.next);
+  if (req.admin) {
+    return res.redirect(nextPath);
   }
 
-  res.render('dashboard', {
-    packages,
-    uploadError: req.query.uploadError || '',
-    uploadSuccess: req.query.uploadSuccess || '',
-    staleCount,
+  res.render('login', {
+    error: String(req.query.error || ''),
+    nextPath,
+    username: String(req.query.username || ''),
   });
 });
 
-app.post('/cleanup-uploads', (req, res) => {
-  const uploadsDir = path.join(__dirname, 'uploads');
+app.post('/login', (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const password = String(req.body.password || '');
+  const nextPath = sanitizeNextPath(req.body.next || req.query.next);
+  const adminSettings = getAdminSettings();
+
+  if (username !== adminSettings.username || !verifyAdminPassword(password, adminSettings.passwordSalt, adminSettings.passwordHash)) {
+    if (wantsHtmlResponse(req)) {
+      return res.status(401).render('login', {
+        error: 'Invalid username or password',
+        nextPath,
+        username,
+      });
+    }
+
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  setAuthCookie(res, username);
+
+  if (wantsHtmlResponse(req)) {
+    return res.redirect(nextPath);
+  }
+
+  return res.json({ ok: true, next: nextPath });
+});
+
+app.post('/logout', (req, res) => {
+  clearAuthCookie(res);
+
+  if (wantsHtmlResponse(req)) {
+    return res.redirect('/login');
+  }
+
+  return res.json({ ok: true });
+});
+
+app.post('/settings/credentials', requireAdmin, (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const currentPassword = String(req.body.currentPassword || '');
+  const newPassword = String(req.body.newPassword || '');
+  const confirmPassword = String(req.body.confirmPassword || '');
+  const cookieSecret = String(req.body.cookieSecret || '').trim();
+  const currentSettings = getAdminSettings();
+
+  if (!username) {
+    return respondDashboardSettings(req, res, 400, 'Username is required', true);
+  }
+
+  if (!verifyAdminPassword(currentPassword, currentSettings.passwordSalt, currentSettings.passwordHash)) {
+    return respondDashboardSettings(req, res, 400, 'Current password is incorrect', true);
+  }
+
+  if (newPassword && newPassword.length < 6) {
+    return respondDashboardSettings(req, res, 400, 'New password must be at least 6 characters', true);
+  }
+
+  if (newPassword !== confirmPassword) {
+    return respondDashboardSettings(req, res, 400, 'New password and confirmation do not match', true);
+  }
+
+  if (cookieSecret && cookieSecret.length < 16) {
+    return respondDashboardSettings(req, res, 400, 'Cookie secret must be at least 16 characters', true);
+  }
+
+  const updatedSettings = updateAdminSettings({
+    username,
+    password: newPassword || undefined,
+    cookieSecret: cookieSecret || undefined,
+  });
+
+  clearAuthCookie(res);
+  setAuthCookie(res, updatedSettings.username);
+
+  return respondDashboardSettings(req, res, 200, 'Admin credentials updated successfully', false);
+});
+
+app.get('/dashboard', requireAdmin, (req, res) => {
+  renderDashboard(req, res);
+});
+
+app.post('/cleanup-uploads', requireAdmin, (req, res) => {
   let removed = 0;
-  if (fs.existsSync(uploadsDir)) {
+  if (fs.existsSync(UPLOADS_DIR)) {
     try {
-      const files = fs.readdirSync(uploadsDir);
+      const files = fs.readdirSync(UPLOADS_DIR);
       for (const f of files) {
-        const fp = path.join(uploadsDir, f);
+        const fp = path.join(UPLOADS_DIR, f);
         try {
           const stat = fs.statSync(fp);
           if (stat.isFile() && stat.size === 0) {
@@ -738,7 +1257,7 @@ app.post('/cleanup-uploads', (req, res) => {
   return respondUploadOutcome(req, res, 200, `Cleaned ${removed} stale zero-byte files`, false);
 });
 
-app.get('/package/:name', (req, res) => {
+app.get('/package/:name', requireAdmin, (req, res) => {
   const pkg = getPackageInfo(req.params.name);
   if (!pkg) return res.status(404).send('Package not found');
 
@@ -863,7 +1382,7 @@ app.get('/package/:name', (req, res) => {
   });
 });
 
-app.post('/upload', (req, res, next) => {
+app.post('/upload', requireAdmin, (req, res, next) => {
   uploadContent(req, res, err => {
     if (err) return respondUploadOutcome(req, res, 400, err.message, true);
     next();
@@ -907,18 +1426,16 @@ app.post('/upload', (req, res, next) => {
   }
 });
 
-app.post('/delete/:name', (req, res) => {
+app.post('/delete/:name', requireAdmin, (req, res) => {
   const pkgDir = path.join(CONTENT_DIR, req.params.name);
   if (!path.resolve(pkgDir).startsWith(path.resolve(CONTENT_DIR))) return res.status(400).json({ error: 'Invalid' });
   if (fs.existsSync(pkgDir)) fs.rmSync(pkgDir, { recursive: true });
-  res.redirect('/');
+  res.redirect('/dashboard');
 });
 
 // ----- REST API -----
 app.get('/api/packages', (req, res) => {
-  const packages = fs.readdirSync(CONTENT_DIR)
-    .filter(f => fs.statSync(path.join(CONTENT_DIR, f)).isDirectory())
-    .map(getPackageInfo).filter(Boolean)
+  const packages = loadDashboardPackages()
     .map(({ path: _, ...rest }) => rest);
   res.json(packages);
 });
@@ -1034,6 +1551,48 @@ app.get('/api/packages/:name/questions/:id', (req, res) => {
   res.json({ id: row.id, question: decQ, explanation: decE, subId: row.subId, sysId: row.sysId, corrAns: row.corrAns, mediaName: row.mediaName, otherMedias: row.otherMedias, answers });
 });
 
+// Serve rendered HTML for a doc (with rewritten media URLs and CSS) — used by Flutter app
+app.get('/api/packages/:name/render/:id', (req, res) => {
+  const pkg = getPackageInfo(req.params.name);
+  if (!pkg || !pkg.hasDb) return res.status(404).json({ error: 'No database' });
+
+  const db = openDb(path.join(pkg.path, pkg.dbFile));
+  const content = getReferenceContent(db, parseInt(req.params.id));
+  db.close();
+
+  if (!content) return res.status(404).json({ error: 'Content not found' });
+
+  const rewritten = rewritePackageHtml(content.html, pkg.name, content.path);
+  res.json({ id: content.id, title: content.title, html: rewritten });
+});
+
+// TOC with decrypted titles — used by Flutter for proper navigation ordering
+app.get('/api/packages/:name/toc-nav', (req, res) => {
+  const pkg = getPackageInfo(req.params.name);
+  if (!pkg || !pkg.hasDb) return res.status(404).json({ error: 'No database' });
+
+  const db = openDb(path.join(pkg.path, pkg.dbFile));
+  const toc = buildReferenceToc(db);
+  const docs = buildReferenceDocs(db);
+  db.close();
+
+  // Build ordered list of doc IDs from TOC (leaf nodes only)
+  const docIds = new Set(docs.map(d => Number(d.id)));
+  const ordered = toc
+    .filter(item => item._docId && docIds.has(Number(item._docId)))
+    .map(item => ({ docId: Number(item._docId), label: item._label, level: item._level }));
+
+  // Add any docs not in TOC at the end
+  const tocDocIds = new Set(ordered.map(o => o.docId));
+  for (const d of docs) {
+    if (!tocDocIds.has(Number(d.id))) {
+      ordered.push({ docId: Number(d.id), label: d.title, level: 0 });
+    }
+  }
+
+  res.json(ordered);
+});
+
 app.get('/api/packages/:name/media/:filename', (req, res) => {
   const pkg = getPackageInfo(req.params.name);
   if (!pkg) return res.status(404).json({ error: 'Not found' });
@@ -1041,14 +1600,15 @@ app.get('/api/packages/:name/media/:filename', (req, res) => {
   const filename = path.basename(req.params.filename);
 
   // Search multiple possible media directories
-  const searchDirs = ['media-E', 'OEBPS/images', 'OEBPS/Images', 'OEBPS', 'images', 'Images', 'base', '.'];
+  const encryptedDirs = new Set(['media-E', 'Resources-E']);
+  const searchDirs = ['media-E', 'Resources-E', 'OEBPS/images', 'OEBPS/Images', 'OEBPS', 'images', 'Images', 'base', '.'];
   let filePath = null;
   let isEncrypted = false;
   for (const dir of searchDirs) {
     const candidate = path.join(pkg.path, dir, filename);
     if (fs.existsSync(candidate) && path.resolve(candidate).startsWith(path.resolve(pkg.path))) {
       filePath = candidate;
-      isEncrypted = dir === 'media-E'; // only media-E contains encrypted files
+      isEncrypted = encryptedDirs.has(dir);
       break;
     }
   }
@@ -1236,19 +1796,20 @@ app.get('/api/packages/:name/docs', (req, res) => {
   if (!pkg || !pkg.hasDb) return res.status(404).json({ error: 'No database' });
   const db = openDb(path.join(pkg.path, pkg.dbFile));
   try {
-    const docs = dbAll(db, 'SELECT id, title, path FROM Docs ORDER BY id');
+    const docs = dbAll(db, 'SELECT * FROM Docs ORDER BY id');
     db.close();
     // Decrypt titles if encrypted
     const result = docs.map(d => {
       const salt = String(d.id);
-      let decTitle = d.title;
+      const rawTitle = d.title || d.name || `Document ${d.id}`;
+      let decTitle = rawTitle;
       try {
-        const decoded = Buffer.from(d.title, 'base64');
+        const decoded = Buffer.from(rawTitle, 'base64');
         if (decoded.length > 16 && decoded.length % 16 === 0) {
-          decTitle = decryptText(d.title, salt);
+          decTitle = decryptText(rawTitle, salt);
         }
       } catch (e) { /* not encrypted */ }
-      return { ...d, title: decTitle };
+      return { id: d.id, title: decTitle, path: d.path || '' };
     });
     res.json(result);
   } catch (e) { db.close(); res.json([]); }

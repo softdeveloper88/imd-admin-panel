@@ -7,10 +7,21 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
-    .navbar { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-    .navbar a { color: white; text-decoration: none; font-size: 20px; }
-    .navbar h1 { font-size: 20px; font-weight: 600; flex: 1; }
+    .navbar { background: #163a46; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .nav-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .nav-title a { color: white; text-decoration: none; font-size: 18px; }
+    .nav-heading { min-width: 0; }
+    .nav-heading p { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7); }
+    .navbar h1 { font-size: 20px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nav-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .nav-chip { padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); font-size: 12px; }
+    .nav-link, .nav-button { color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.1); border-radius: 999px; padding: 10px 14px; font-size: 13px; cursor: pointer; }
+    .nav-form { margin: 0; }
     .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .package-status { margin-bottom: 20px; padding: 14px 18px; border-radius: 12px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .status-pill { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+    .status-pill.ready { color: #067647; background: #ecfdf3; }
+    .status-pill.issue { color: #b42318; background: #fef3f2; }
     .tabs { display: flex; gap: 0; margin-bottom: 24px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .tab { flex: 1; padding: 14px; text-align: center; cursor: pointer; font-weight: 500; border-bottom: 3px solid transparent; transition: all 0.2s; color: #666; }
     .tab.active { color: #1a73e8; border-bottom-color: #1a73e8; background: #f0f6ff; }
@@ -123,10 +134,30 @@
 </head>
 <body>
   <div class="navbar">
-    <a href="/">&#8592;</a>
-    <h1><%= pkg.name %></h1>
+    <div class="nav-title">
+      <a href="/dashboard">&#8592;</a>
+      <div class="nav-heading">
+        <p>Package Viewer</p>
+        <h1><%= pkg.name %></h1>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <div class="nav-chip"><%= currentAdminUser || 'admin' %></div>
+      <a class="nav-link" href="/dashboard">Dashboard</a>
+      <form class="nav-form" action="/logout" method="POST">
+        <button class="nav-button" type="submit">Logout</button>
+      </form>
+    </div>
   </div>
   <div class="container">
+    <div class="package-status">
+      <span class="status-pill <%= pkg.isValidPackage ? 'ready' : 'issue' %>"><%= pkg.statusLabel %></span>
+      <span><strong>Type:</strong> <%= pkg.type %></span>
+      <span><strong>Category:</strong> <%= pkg.category %></span>
+      <% if (pkg.issue) { %>
+        <span><strong>Issue:</strong> <%= pkg.issue %></span>
+      <% } %>
+    </div>
     <div class="stats-bar">
       <% if (viewMode === 'reference') { %>
         <div class="stat-chip"><strong><%= total %></strong>Documents</div>

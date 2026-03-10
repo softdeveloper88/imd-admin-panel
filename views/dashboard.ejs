@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iMD Admin Panel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+    .navbar { background: #1a73e8; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .navbar h1 { font-size: 22px; font-weight: 600; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .upload-card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .upload-card h2 { margin-bottom: 16px; font-size: 18px; color: #1a73e8; }
+    .upload-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .upload-form input[type="file"] { flex: 1; min-width: 200px; }
+    .upload-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .upload-option { border: 1px solid #dbe4f0; border-radius: 10px; padding: 16px; background: #f8fbff; transition: border-color 0.2s, background 0.2s; }
+    .upload-option.drag-over { border-color: #1a73e8; background: #e8f0fe; }
+    .upload-option h3 { font-size: 15px; margin-bottom: 10px; color: #174ea6; }
+    .upload-option p { font-size: 13px; color: #667085; margin-top: 10px; line-height: 1.5; }
+    .upload-option input[type="text"] { width: 100%; padding: 10px 12px; border: 1px solid #ccd7e6; border-radius: 8px; font-size: 14px; margin-top: 10px; }
+    .drop-zone { border: 2px dashed #ccd7e6; border-radius: 8px; padding: 24px 16px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 8px; }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #1a73e8; background: #e8f0fe; }
+    .drop-zone .drop-icon { font-size: 32px; margin-bottom: 8px; }
+    .drop-zone .drop-text { font-size: 14px; color: #667085; }
+    .drop-zone .drop-text strong { color: #1a73e8; }
+    .file-info { margin-top: 8px; padding: 8px 12px; background: #f0f4f9; border-radius: 6px; font-size: 13px; color: #333; }
+    .status-banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 14px; }
+    .status-banner.error { background: #fef3f2; border: 1px solid #fecdca; color: #b42318; }
+    .status-banner.success { background: #ecfdf3; border: 1px solid #abefc6; color: #067647; }
+    .upload-hint { margin-top: 10px; font-size: 13px; color: #667085; }
+    .upload-hint.error { color: #b42318; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+    .btn-primary { background: #1a73e8; color: white; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-danger { background: #dc3545; color: white; }
+    .btn-danger:hover { background: #c82333; }
+    .btn-view { background: #28a745; color: white; }
+    .btn-view:hover { background: #218838; }
+    .packages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
+    .pkg-card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; }
+    .pkg-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .pkg-header { display: flex; align-items: center; gap: 16px; padding: 20px; border-bottom: 1px solid #eee; }
+    .pkg-icon { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: #e8f0fe; display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+    .pkg-icon img { width: 100%; height: 100%; border-radius: 12px; object-fit: cover; }
+    .pkg-title { font-size: 16px; font-weight: 600; word-break: break-word; }
+    .pkg-body { padding: 16px 20px; }
+    .pkg-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #555; }
+    .stat-num { font-weight: 600; color: #1a73e8; }
+    .pkg-actions { display: flex; gap: 8px; padding: 16px 20px; border-top: 1px solid #eee; }
+    .empty-state { text-align: center; padding: 60px 20px; color: #888; }
+    .empty-state svg { width: 80px; height: 80px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state p { font-size: 16px; }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <h1>iMD Admin Panel</h1>
+  </div>
+
+  <div class="container">
+    <div class="upload-card">
+      <h2>Upload Content Package</h2>
+      <% if (uploadError) { %>
+        <div class="status-banner error"><%= uploadError %></div>
+      <% } %>
+      <% if (uploadSuccess) { %>
+        <div class="status-banner success"><%= uploadSuccess %></div>
+      <% } %>
+      <form class="upload-form" id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
+        <div class="upload-options">
+          <div class="upload-option" id="zipDropZone">
+            <h3>Zip Upload</h3>
+            <div class="drop-zone" id="zipDrop">
+              <div class="drop-icon">📦</div>
+              <div class="drop-text">Drag &amp; drop a <strong>.zip</strong> file here, or click to browse</div>
+            </div>
+            <input type="file" id="packageZip" name="packageZip" accept=".zip" style="display:none">
+            <div class="upload-hint" id="zipHint">Choose a single non-empty .zip file.</div>
+            <div class="file-info" id="zipFileInfo" style="display:none"></div>
+            <p>Upload a single zip file. The server extracts it directly into the content library.</p>
+          </div>
+          <div class="upload-option" id="folderDropZone">
+            <h3>Folder Upload</h3>
+            <div class="drop-zone" id="folderDrop">
+              <div class="drop-icon">📁</div>
+              <div class="drop-text">Click to select a <strong>folder</strong></div>
+            </div>
+            <input type="file" id="packageFolder" name="packageFolder" webkitdirectory directory multiple style="display:none">
+            <input type="text" name="packageName" placeholder="Optional package name override for folder upload">
+            <div class="upload-hint" id="folderHint">Choose one folder only. Keep the original package structure intact.</div>
+            <div class="file-info" id="folderFileInfo" style="display:none"></div>
+            <p>Select a package folder directly from your computer. Keep the folder structure intact, including the <code>.db</code> file and media folders.</p>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="uploadButton">Upload Package</button>
+      </form>
+      <% if (staleCount > 0) { %>
+        <form action="/cleanup-uploads" method="POST" style="display:inline; margin-left: 8px;">
+          <button type="submit" class="btn btn-danger" onclick="return confirm('Remove <%= staleCount %> stale zero-byte files from uploads folder?')">Clean <%= staleCount %> stale files</button>
+        </form>
+      <% } %>
+      <p style="margin-top: 8px; color: #888; font-size: 13px;">Choose either a zip file or a folder. Existing packages with the same name will be replaced.</p>
+    </div>
+
+    <% if (packages.length === 0) { %>
+      <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+        <p>No content packages uploaded yet.<br>Upload a zip file or choose a folder to get started.</p>
+      </div>
+    <% } else { %>
+      <div class="packages-grid">
+        <% packages.forEach(pkg => { %>
+          <div class="pkg-card">
+            <div class="pkg-header">
+              <div class="pkg-icon">
+                <% if (pkg.hasIcon) { %>
+                  <img src="/api/packages/<%= pkg.name %>/icon" alt="icon">
+                <% } else { %>
+                  📦
+                <% } %>
+              </div>
+              <div class="pkg-title"><%= pkg.name %></div>
+            </div>
+            <div class="pkg-body">
+              <div class="pkg-stats">
+                <div class="stat">Questions: <span class="stat-num"><%= pkg.questionCount %></span></div>
+                <div class="stat">Subjects: <span class="stat-num"><%= pkg.subjectCount %></span></div>
+                <div class="stat">Systems: <span class="stat-num"><%= pkg.systemCount %></span></div>
+                <div class="stat">Media: <span class="stat-num"><%= pkg.mediaCount %></span></div>
+              </div>
+            </div>
+            <div class="pkg-actions">
+              <a href="/package/<%= pkg.name %>" class="btn btn-view" style="text-decoration:none;">View Content</a>
+              <form action="/delete/<%= pkg.name %>" method="POST" style="display:inline" onsubmit="return confirm('Delete this package?')">
+                <button type="submit" class="btn btn-danger">Delete</button>
+              </form>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+
+  <script>
+    const uploadForm = document.getElementById('uploadForm');
+    const packageZipInput = document.getElementById('packageZip');
+    const packageFolderInput = document.getElementById('packageFolder');
+    const zipHint = document.getElementById('zipHint');
+    const folderHint = document.getElementById('folderHint');
+    const zipFileInfo = document.getElementById('zipFileInfo');
+    const folderFileInfo = document.getElementById('folderFileInfo');
+    const uploadButton = document.getElementById('uploadButton');
+    const zipDrop = document.getElementById('zipDrop');
+    const folderDrop = document.getElementById('folderDrop');
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function setHint(element, message, isError) {
+      element.textContent = message;
+      element.classList.toggle('error', Boolean(isError));
+    }
+
+    function describeSelections() {
+      const zipFile = packageZipInput.files[0];
+      const folderFiles = Array.from(packageFolderInput.files || []);
+
+      if (zipFile) {
+        setHint(zipHint, '', false);
+        zipFileInfo.style.display = 'block';
+        zipFileInfo.innerHTML = '<strong>' + zipFile.name + '</strong> — ' + formatSize(zipFile.size);
+        if (zipFile.size === 0) {
+          setHint(zipHint, 'Warning: This zip file is empty (0 bytes).', true);
+        }
+        zipDrop.querySelector('.drop-text').innerHTML = '<strong>' + zipFile.name + '</strong>';
+      } else {
+        setHint(zipHint, 'Choose a single non-empty .zip file.', false);
+        zipFileInfo.style.display = 'none';
+        zipDrop.querySelector('.drop-text').innerHTML = 'Drag & drop a <strong>.zip</strong> file here, or click to browse';
+      }
+
+      if (folderFiles.length > 0) {
+        const roots = new Set(folderFiles.map(f => (f.webkitRelativePath || f.name).split('/')[0]).filter(Boolean));
+        const totalSize = folderFiles.reduce((s, f) => s + f.size, 0);
+        const dbCount = folderFiles.filter(f => f.name.endsWith('.db')).length;
+        setHint(folderHint, '', false);
+        folderFileInfo.style.display = 'block';
+        folderFileInfo.innerHTML = '<strong>' + folderFiles.length + ' files</strong> from ' + roots.size + ' folder' + (roots.size === 1 ? '' : 's') + ' — ' + formatSize(totalSize) + (dbCount > 0 ? ' — <strong>' + dbCount + ' database' + (dbCount > 1 ? 's' : '') + '</strong>' : '');
+        if (roots.size > 1) {
+          setHint(folderHint, 'Warning: select only one folder, not multiple.', true);
+        }
+        folderDrop.querySelector('.drop-text').innerHTML = '<strong>' + Array.from(roots)[0] + '</strong> — ' + folderFiles.length + ' files';
+      } else {
+        setHint(folderHint, 'Choose one folder only. Keep the original package structure intact.', false);
+        folderFileInfo.style.display = 'none';
+        folderDrop.querySelector('.drop-text').innerHTML = 'Click to select a <strong>folder</strong>';
+      }
+    }
+
+    // Click-to-browse for drop zones
+    zipDrop.addEventListener('click', () => packageZipInput.click());
+    folderDrop.addEventListener('click', () => packageFolderInput.click());
+
+    packageZipInput.addEventListener('change', describeSelections);
+    packageFolderInput.addEventListener('change', describeSelections);
+
+    // Drag-and-drop for zip zone
+    function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => {
+      zipDrop.addEventListener(evt, preventDefaults);
+      document.body.addEventListener(evt, preventDefaults);
+    });
+
+    zipDrop.addEventListener('dragenter', () => zipDrop.classList.add('drag-over'));
+    zipDrop.addEventListener('dragover', () => zipDrop.classList.add('drag-over'));
+    zipDrop.addEventListener('dragleave', () => zipDrop.classList.remove('drag-over'));
+    zipDrop.addEventListener('drop', e => {
+      zipDrop.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          // Create a new DataTransfer to set files on input
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          packageZipInput.files = dt.files;
+          describeSelections();
+        } else {
+          setHint(zipHint, 'Only .zip files are accepted. Got: ' + file.name, true);
+        }
+      }
+    });
+
+    uploadForm.addEventListener('submit', event => {
+      const zipFile = packageZipInput.files[0];
+      const folderFiles = Array.from(packageFolderInput.files || []);
+
+      if (!zipFile && folderFiles.length === 0) {
+        event.preventDefault();
+        setHint(zipHint, 'Choose a zip file or a folder before uploading.', true);
+        return;
+      }
+
+      if (zipFile && folderFiles.length > 0) {
+        event.preventDefault();
+        setHint(zipHint, 'Choose either zip upload or folder upload, not both.', true);
+        setHint(folderHint, 'Choose either zip upload or folder upload, not both.', true);
+        return;
+      }
+
+      if (zipFile && zipFile.size === 0) {
+        event.preventDefault();
+        setHint(zipHint, 'The selected zip file is empty. Choose the original non-empty zip.', true);
+        return;
+      }
+
+      if (folderFiles.length > 0) {
+        const roots = new Set(folderFiles.map(file => (file.webkitRelativePath || file.name).split('/')[0]).filter(Boolean));
+        if (roots.size > 1) {
+          event.preventDefault();
+          setHint(folderHint, 'Choose a single package folder, not multiple folders at once.', true);
+          return;
+        }
+      }
+
+      uploadButton.disabled = true;
+      uploadButton.textContent = 'Uploading...';
+    });
+
+    describeSelections();
+  </script>
+</body>
+</html>

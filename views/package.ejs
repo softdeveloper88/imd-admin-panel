@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= pkg.name %> - iMD Admin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+    .navbar { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+    .navbar a { color: white; text-decoration: none; font-size: 20px; }
+    .navbar h1 { font-size: 20px; font-weight: 600; flex: 1; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .tabs { display: flex; gap: 0; margin-bottom: 24px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .tab { flex: 1; padding: 14px; text-align: center; cursor: pointer; font-weight: 500; border-bottom: 3px solid transparent; transition: all 0.2s; color: #666; }
+    .tab.active { color: #1a73e8; border-bottom-color: #1a73e8; background: #f0f6ff; }
+    .tab:hover { background: #f5f5f5; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .stats-bar { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat-chip { background: white; padding: 14px 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 14px; flex: 1; min-width: 120px; text-align: center; }
+    .stat-chip strong { color: #1a73e8; font-size: 20px; display: block; margin-bottom: 4px; }
+    .filters { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .filter-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 160px; }
+    .filter-group label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .filter-group select, .filter-group input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+    .btn-primary { background: #1a73e8; color: white; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-secondary { background: #6c757d; color: white; text-decoration: none; display: inline-block; }
+    /* Question card */
+    .q-card { background: white; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow: hidden; }
+    .q-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: #f8f9fa; border-bottom: 1px solid #eee; }
+    .q-id { font-size: 13px; color: #1a73e8; font-weight: 600; }
+    .q-meta { display: flex; gap: 8px; }
+    .q-tag { font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #e8f0fe; color: #1a73e8; }
+    .q-tag.sys { background: #fff3e0; color: #e65100; }
+    .q-body { padding: 16px 20px; font-size: 15px; line-height: 1.7; }
+    .q-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; }
+    .answers-list { padding: 0 20px 16px; }
+    .answer-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; margin-bottom: 8px; border-radius: 10px; border: 1px solid #e0e0e0; transition: all 0.2s; }
+    .answer-item.correct { background: #e8f5e9; border-color: #4caf50; }
+    .answer-letter { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; background: #f0f2f5; color: #555; }
+    .answer-item.correct .answer-letter { background: #4caf50; color: white; }
+    .answer-text { flex: 1; font-size: 14px; line-height: 1.5; }
+    .answer-text p { margin: 0; }
+    .explanation-toggle { padding: 0 20px 16px; }
+    .explanation-box { background: #f0f6ff; border-radius: 10px; padding: 16px; margin-top: 8px; font-size: 14px; line-height: 1.6; display: none; }
+    .explanation-box.show { display: block; }
+    .explanation-box img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; }
+    /* Pagination */
+    .pagination { display: flex; justify-content: center; gap: 6px; margin-top: 24px; flex-wrap: wrap; }
+    .pagination a { padding: 8px 14px; border-radius: 8px; text-decoration: none; background: white; color: #333; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 14px; }
+    .pagination a.active { background: #1a73e8; color: white; }
+    .pagination a:hover { background: #e8f0fe; }
+    .pagination a.active:hover { background: #1557b0; }
+    .reference-shell { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; }
+    .reference-sidebar { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow: hidden; }
+    .reference-sidebar-header { padding: 16px 18px; border-bottom: 1px solid #edf0f5; }
+    .reference-sidebar-header h3 { font-size: 15px; color: #174ea6; }
+    .reference-sidebar-header p { margin-top: 6px; font-size: 12px; color: #667085; }
+    .reference-list { max-height: 70vh; overflow: auto; }
+    .reference-link { display: block; padding: 10px 16px; text-decoration: none; color: #334155; border-left: 3px solid transparent; border-bottom: 1px solid #f2f4f7; font-size: 14px; }
+    .reference-link:hover { background: #f8fbff; color: #174ea6; }
+    .reference-link.active { background: #eef5ff; border-left-color: #1a73e8; color: #174ea6; font-weight: 600; }
+    .reference-docs { border-top: 1px solid #edf0f5; }
+    .reference-docs .reference-link { font-size: 13px; }
+    .reference-reader { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow: hidden; }
+    .reference-reader-header { padding: 18px 22px; border-bottom: 1px solid #edf0f5; background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%); }
+    .reference-reader-header h2 { font-size: 20px; color: #163a6b; }
+    .reference-reader-header p { margin-top: 6px; font-size: 12px; color: #667085; text-transform: uppercase; letter-spacing: 0.08em; }
+    .reference-reader-body { padding: 24px; line-height: 1.75; font-size: 15px; color: #243b53; }
+    .reference-reader-body img, .reference-reader-body svg, .reference-reader-body video, .reference-reader-body iframe { max-width: 100%; height: auto; }
+    .reference-reader-body table { max-width: 100%; display: block; overflow-x: auto; }
+    .reference-empty { padding: 48px 24px; text-align: center; color: #667085; }
+    .reference-level-1 { padding-left: 28px; }
+    .reference-level-2 { padding-left: 40px; }
+    .reference-level-3 { padding-left: 52px; }
+    .reference-level-4 { padding-left: 64px; }
+    @media (max-width: 960px) {
+      .reference-shell { grid-template-columns: 1fr; }
+      .reference-list { max-height: none; }
+    }
+    /* DB Explorer */
+    .schema-table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .schema-table th { background: #2c3e50; color: white; padding: 12px 16px; text-align: left; font-size: 13px; }
+    .schema-table td { padding: 10px 16px; border-bottom: 1px solid #eee; font-size: 14px; }
+    .schema-table tr:hover td { background: #f8f9fa; }
+    .schema-table a { color: #1a73e8; text-decoration: none; font-weight: 500; }
+    .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; font-size: 13px; }
+    .data-table th { background: #f8f9fa; padding: 10px 12px; text-align: left; font-size: 12px; color: #666; border-bottom: 2px solid #ddd; white-space: nowrap; }
+    .data-table td { padding: 8px 12px; border-bottom: 1px solid #eee; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .data-table tr:hover td { background: #f0f6ff; }
+    .dec-field { background: #e8f5e9; border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+    /* Guide navigator */
+    .guide-shell { display: grid; grid-template-columns: 300px 1fr; gap: 20px; height: calc(100vh - 220px); min-height: 600px; }
+    .guide-sidebar { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+    .guide-sidebar-header { padding: 14px 16px; background: #1a4a7a; color: white; }
+    .guide-sidebar-header h3 { font-size: 15px; margin-bottom: 2px; }
+    .guide-sidebar-header p { font-size: 11px; opacity: 0.8; }
+    .guide-breadcrumb { display: flex; gap: 4px; align-items: center; padding: 8px 14px; background: #f0f6ff; border-bottom: 1px solid #dde5f0; font-size: 12px; flex-wrap: wrap; min-height: 36px; }
+    .guide-breadcrumb span { color: #1a73e8; cursor: pointer; }
+    .guide-breadcrumb span:hover { text-decoration: underline; }
+    .guide-breadcrumb .sep { color: #aaa; }
+    .guide-tree { flex: 1; overflow-y: auto; }
+    .guide-item { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid #f0f2f5; cursor: pointer; transition: background 0.15s; text-decoration: none; color: #2c3e50; }
+    .guide-item:hover { background: #f0f6ff; color: #1a73e8; }
+    .guide-item.active { background: #e8f3ff; color: #1a4a7a; font-weight: 600; border-left: 3px solid #1a73e8; }
+    .guide-item .gi-icon { font-size: 16px; flex-shrink: 0; }
+    .guide-item .gi-title { flex: 1; font-size: 14px; line-height: 1.3; }
+    .guide-item .gi-chevron { font-size: 12px; color: #aaa; flex-shrink: 0; }
+    .guide-content-panel { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+    .guide-content-header { padding: 14px 20px; background: #1a4a7a; color: white; }
+    .guide-content-header h2 { font-size: 17px; }
+    .guide-content-header p { font-size: 11px; opacity: 0.7; margin-top: 2px; }
+    .guide-content-body { flex: 1; overflow: hidden; }
+    .guide-content-body iframe { width: 100%; height: 100%; border: none; display: block; }
+    .guide-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #aaa; gap: 12px; }
+    .guide-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: #888; gap: 10px; }
+    @media (max-width: 960px) { .guide-shell { grid-template-columns: 1fr; height: auto; } }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <a href="/">&#8592;</a>
+    <h1><%= pkg.name %></h1>
+  </div>
+  <div class="container">
+    <div class="stats-bar">
+      <% if (viewMode === 'reference') { %>
+        <div class="stat-chip"><strong><%= total %></strong>Documents</div>
+        <div class="stat-chip"><strong><%= referenceToc.filter(item => item._docId).length %></strong>TOC Links</div>
+        <div class="stat-chip"><strong><%= referenceToc.length %></strong>TOC Nodes</div>
+      <% } else if (viewMode === 'guide') { %>
+        <div class="stat-chip"><strong><%= pkg.contentCount || pkg.questionCount %></strong>Topics</div>
+        <div class="stat-chip"><strong>BT Config</strong>Guide</div>
+        <div class="stat-chip"><strong><%= pkg.category %></strong>Category</div>
+      <% } else { %>
+        <div class="stat-chip"><strong><%= total %></strong>Questions</div>
+        <div class="stat-chip"><strong><%= subjects.length %></strong>Subjects</div>
+        <div class="stat-chip"><strong><%= systems.length %></strong>Systems</div>
+      <% } %>
+      <div class="stat-chip"><strong><%= pkg.mediaCount %></strong>Media Files</div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('questions')"><%= viewMode === 'reference' ? 'Reader' : (viewMode === 'guide' ? 'Guide Navigator' : 'Questions & Answers') %></div>
+      <div class="tab" onclick="switchTab('explorer')">DB Explorer</div>
+    </div>
+
+    <!-- QUESTIONS TAB -->
+    <div id="tab-questions" class="tab-content active">
+      <% if (viewMode === 'guide') { %>
+        <div class="guide-shell">
+          <div class="guide-sidebar">
+            <div class="guide-sidebar-header">
+              <h3>📋 Contents</h3>
+              <p>Browse the guide hierarchy</p>
+            </div>
+            <div class="guide-breadcrumb" id="guide-breadcrumb"></div>
+            <div class="guide-tree" id="guide-tree">
+              <div class="guide-loading">⏳ Loading guide...</div>
+            </div>
+          </div>
+          <div class="guide-content-panel">
+            <div class="guide-content-header" id="guide-content-header">
+              <h2 id="guide-content-title">Select a topic</h2>
+              <p id="guide-content-sub">Click any leaf item in the sidebar to view its content</p>
+            </div>
+            <div class="guide-content-body" id="guide-content-body">
+              <div class="guide-placeholder">
+                <span style="font-size:48px">📖</span>
+                <span>Select a topic from the sidebar to read its content</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% } else if (viewMode === 'reference') { %>
+        <div class="reference-shell">
+          <div class="reference-sidebar">
+            <div class="reference-sidebar-header">
+              <h3>Contents</h3>
+              <p>Select a chapter to display decrypted HTML from the database.</p>
+            </div>
+            <div class="reference-list">
+              <% if (referenceToc.length > 0) { %>
+                <% referenceToc.forEach(item => { %>
+                  <% if (item._docId) { %>
+                    <a href="/package/<%= pkg.name %>?doc=<%= item._docId %>" class="reference-link reference-level-<%= Math.min(item._level, 4) %> <%= Number(selectedDocId) === Number(item._docId) ? 'active' : '' %>"><%= item._label %></a>
+                  <% } else { %>
+                    <div class="reference-link reference-level-<%= Math.min(item._level, 4) %>" style="cursor:default; color:#98a2b3;"><%= item._label %></div>
+                  <% } %>
+                <% }) %>
+              <% } else if (referenceDocs.length > 0) { %>
+                <% referenceDocs.forEach(doc => { %>
+                  <a href="/package/<%= pkg.name %>?doc=<%= doc.id %>" class="reference-link <%= Number(selectedDocId) === Number(doc.id) ? 'active' : '' %>"><%= doc.title %></a>
+                <% }) %>
+              <% } else { %>
+                <div class="reference-empty">No TOC or documents were found in this package.</div>
+              <% } %>
+            </div>
+            <% if (referenceDocs.length > 0) { %>
+              <div class="reference-docs">
+                <div class="reference-sidebar-header">
+                  <h3>Docs Table</h3>
+                  <p>Fallback document list.</p>
+                </div>
+                <div class="reference-list">
+                  <% referenceDocs.forEach(doc => { %>
+                    <a href="/package/<%= pkg.name %>?doc=<%= doc.id %>" class="reference-link <%= Number(selectedDocId) === Number(doc.id) ? 'active' : '' %>"><%= doc.title %></a>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
+          </div>
+          <div class="reference-reader">
+            <% if (referenceContentHtml) { %>
+              <div class="reference-reader-header">
+                <h2><%= referenceContentTitle %></h2>
+                <p><%= referenceContentTable %> table</p>
+              </div>
+              <div class="reference-reader-body"><%- referenceContentHtml %></div>
+            <% } else { %>
+              <div class="reference-empty">No readable HTML content was found for the selected document.</div>
+            <% } %>
+          </div>
+        </div>
+      <% } else { %>
+        <div class="filters">
+          <form class="filter-row" method="GET" action="/package/<%= pkg.name %>">
+            <div class="filter-group">
+              <label>Subject</label>
+              <select name="subject">
+                <option value="">All Subjects</option>
+                <% subjects.forEach(s => { %>
+                  <option value="<%= s.id %>" <%= subjectFilter == s.id ? 'selected' : '' %>><%= s.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>System</label>
+              <select name="system">
+                <option value="">All Systems</option>
+                <% systems.forEach(s => { %>
+                  <option value="<%= s.id %>" <%= systemFilter == s.id ? 'selected' : '' %>><%= s.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Filter</button>
+            <a href="/package/<%= pkg.name %>" class="btn btn-secondary">Reset</a>
+          </form>
+        </div>
+
+        <% if (questions.length === 0) { %>
+          <div style="text-align:center; padding:40px; color:#888;">No questions found.</div>
+        <% } else { %>
+          <% questions.forEach((q, qi) => { %>
+            <div class="q-card">
+              <div class="q-header">
+                <span class="q-id">Question #<%= q.id %></span>
+                <div class="q-meta">
+                  <% if (q.subjectName) { %><span class="q-tag"><%= q.subjectName %></span><% } %>
+                  <% if (q.systemName) { %><span class="q-tag sys"><%= q.systemName %></span><% } %>
+                </div>
+              </div>
+              <div class="q-body"><%- q.decryptedQuestion %></div>
+              <% if (q.answers && q.answers.length > 0) { %>
+                <div class="answers-list">
+                  <% q.answers.forEach(a => { %>
+                    <div class="answer-item <%= a.isCorrect ? 'correct' : '' %>">
+                      <div class="answer-letter"><%= String.fromCharCode(64 + a.answerId) %></div>
+                      <div class="answer-text"><%- a.answerText %></div>
+                      <% if (a.isCorrect) { %><span style="color:#4caf50; font-size:18px;">&#10003;</span><% } %>
+                    </div>
+                  <% }) %>
+                </div>
+              <% } %>
+              <% if (q.explanation) { %>
+                <div class="explanation-toggle">
+                  <button class="btn btn-secondary" data-exp-index="<%= qi %>" onclick="toggleExplanation(this)" style="font-size:12px; padding:6px 14px;">Show Explanation</button>
+                  <div class="explanation-box" id="exp-<%= qi %>"><%- q.explanation %></div>
+                </div>
+              <% } %>
+            </div>
+          <% }) %>
+          <div class="pagination">
+            <% if (page > 1) { %>
+              <a href="/package/<%= pkg.name %>?page=<%= page-1 %>&subject=<%= subjectFilter %>&system=<%= systemFilter %>">&laquo; Prev</a>
+            <% } %>
+            <% for (let i = Math.max(1, page-3); i <= Math.min(totalPages, page+3); i++) { %>
+              <a href="/package/<%= pkg.name %>?page=<%= i %>&subject=<%= subjectFilter %>&system=<%= systemFilter %>" class="<%= i === page ? 'active' : '' %>"><%= i %></a>
+            <% } %>
+            <% if (page < totalPages) { %>
+              <a href="/package/<%= pkg.name %>?page=<%= page+1 %>&subject=<%= subjectFilter %>&system=<%= systemFilter %>">Next &raquo;</a>
+            <% } %>
+          </div>
+        <% } %>
+      <% } %>
+    </div>
+
+    <!-- DB EXPLORER TAB -->
+    <div id="tab-explorer" class="tab-content">
+      <div id="schema-loading" style="text-align:center; padding:40px;">Loading schema...</div>
+      <div id="schema-view" style="display:none;"></div>
+      <div id="table-view" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('tab-' + tab).classList.add('active');
+      if (tab === 'explorer' && !window._schemaLoaded) loadSchema();
+    }
+
+    function toggleExplanation(button) {
+      const expIndex = button.dataset.expIndex;
+      const el = document.getElementById('exp-' + expIndex);
+      el.classList.toggle('show');
+      button.textContent = el.classList.contains('show') ? 'Hide Explanation' : 'Show Explanation';
+    }
+
+    // Also decrypt answers for admin view
+    const pkgName = '<%= pkg.name %>';
+    const viewMode = '<%= viewMode %>';
+
+    // ---- Guide Navigator ----
+    if (viewMode === 'guide') {
+      const _navStack = []; // stack of {screenId, title}
+
+      async function guideLoadScreen(screenId, title, pushHistory) {
+        const tree = document.getElementById('guide-tree');
+        tree.innerHTML = '<div class="guide-loading">⏳ Loading...</div>';
+
+        try {
+          const res = await fetch('/api/packages/' + pkgName + '/bt-screen/' + encodeURIComponent(screenId));
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+
+          if (pushHistory) {
+            _navStack.push({ screenId, title: title || data.titleText });
+          }
+          _updateBreadcrumb();
+          _renderTree(data.children, data.titleText);
+        } catch (e) {
+          tree.innerHTML = '<div style="padding:20px; color:red;">Failed to load screen: ' + e.message + '</div>';
+        }
+      }
+
+      function _updateBreadcrumb() {
+        const bc = document.getElementById('guide-breadcrumb');
+        if (_navStack.length === 0) { bc.innerHTML = ''; return; }
+        let html = '<span onclick="guidePop(0)">🏠 Home</span>';
+        _navStack.forEach((item, i) => {
+          html += '<span class="sep"> › </span>';
+          if (i < _navStack.length - 1) {
+            html += '<span onclick="guidePop(' + (i + 1) + ')">' + _esc(item.title) + '</span>';
+          } else {
+            html += '<strong>' + _esc(item.title) + '</strong>';
+          }
+        });
+        bc.innerHTML = html;
+      }
+
+      function _renderTree(children, parentTitle) {
+        const tree = document.getElementById('guide-tree');
+        if (!children || children.length === 0) {
+          tree.innerHTML = '<div style="padding:20px; color:#aaa; text-align:center;">No items</div>';
+          return;
+        }
+        let html = '';
+        children.forEach(child => {
+          const isLeaf = child.itemType === 'BT_screen_webView';
+          const icon = isLeaf ? '📄' : '📁';
+          const chevron = isLeaf ? '' : '<span class="gi-chevron">›</span>';
+          html += '<div class="guide-item" data-screen="' + _esc(child.targetScreenId) + '" data-title="' + _esc(child.titleText) + '" data-leaf="' + (isLeaf ? '1' : '0') + '" data-file="' + _esc(child.localFileName) + '" onclick="guideItemClick(this)">';
+          html += '<span class="gi-icon">' + icon + '</span>';
+          html += '<span class="gi-title">' + _esc(child.titleText) + '</span>';
+          html += chevron;
+          html += '</div>';
+        });
+        tree.innerHTML = html;
+      }
+
+      window.guideItemClick = function(el) {
+        const isLeaf = el.dataset.leaf === '1';
+        const screenId = el.dataset.screen;
+        const title = el.dataset.title;
+        const filename = el.dataset.file;
+
+        document.querySelectorAll('.guide-item').forEach(e => e.classList.remove('active'));
+        el.classList.add('active');
+
+        if (isLeaf) {
+          document.getElementById('guide-content-title').textContent = title;
+          document.getElementById('guide-content-sub').textContent = filename;
+          document.getElementById('guide-content-body').innerHTML =
+            '<iframe src="/api/packages/' + encodeURIComponent(pkgName) + '/bt-html/' + encodeURIComponent(filename) + '" sandbox="allow-same-origin allow-scripts"></iframe>';
+        } else {
+          guideLoadScreen(screenId, title, true);
+        }
+      };
+
+      window.guidePop = function(toIndex) {
+        // Pop back to toIndex level
+        _navStack.splice(toIndex);
+        const target = _navStack.length > 0 ? _navStack[_navStack.length - 1] : { screenId: '0', title: 'Home Screen' };
+        if (_navStack.length > 0) _navStack.pop(); // will be re-pushed by loadScreen
+        guideLoadScreen(target.screenId, target.title, true);
+      };
+
+      function _esc(str) {
+        return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      // Boot: load home screen (screenId = '0')
+      guideLoadScreen('0', 'Home Screen', true);
+    }
+
+    async function loadSchema() {
+      try {
+        const res = await fetch('/api/packages/' + pkgName + '/schema');
+        const schema = await res.json();
+        window._schemaLoaded = true;
+        document.getElementById('schema-loading').style.display = 'none';
+        const view = document.getElementById('schema-view');
+        view.style.display = 'block';
+
+        let html = '<h3 style="margin-bottom:12px;">Database Tables</h3>';
+        html += '<table class="schema-table"><tr><th>Table</th><th>Columns</th><th>Rows</th><th>Actions</th></tr>';
+        schema.forEach(t => {
+          html += '<tr>';
+          html += '<td><strong>' + t.table + '</strong></td>';
+          html += '<td>' + t.columns.map(c => '<code>' + c.name + '</code> <small style="color:#888">(' + (c.type || 'TEXT') + ')</small>').join(', ') + '</td>';
+          html += '<td>' + t.rowCount + '</td>';
+          html += '<td><a href="#" onclick="browseTable(\'' + t.table + '\', 1, false); return false;">Browse</a> | <a href="#" onclick="browseTable(\'' + t.table + '\', 1, true); return false;">Browse + Decrypt</a></td>';
+          html += '</tr>';
+        });
+        html += '</table>';
+        view.innerHTML = html;
+      } catch (e) {
+        document.getElementById('schema-loading').innerHTML = '<span style="color:red;">Failed to load schema</span>';
+      }
+    }
+
+    async function browseTable(table, page, decrypt) {
+      const tv = document.getElementById('table-view');
+      tv.style.display = 'block';
+      tv.innerHTML = '<div style="text-align:center; padding:20px;">Loading...</div>';
+      try {
+        const res = await fetch('/api/packages/' + pkgName + '/table/' + encodeURIComponent(table) + '?page=' + page + '&limit=30&decrypt=' + decrypt);
+        const data = await res.json();
+        let html = '<div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0;">';
+        html += '<h3>' + data.table + ' <small style="color:#888;">(' + data.total + ' rows, page ' + data.page + '/' + data.totalPages + ')</small></h3>';
+        html += '<button class="btn btn-secondary" onclick="document.getElementById(\'table-view\').style.display=\'none\'" style="font-size:12px; padding:6px 12px;">Close</button>';
+        html += '</div>';
+        html += '<div style="overflow-x:auto;"><table class="data-table"><tr>';
+        data.columns.forEach(c => {
+          html += '<th>' + c.name + (c.pk ? ' 🔑' : '') + '</th>';
+        });
+        // Add decrypted columns
+        if (decrypt && data.rows.length > 0) {
+          Object.keys(data.rows[0]).filter(k => k.endsWith('_decrypted')).forEach(k => {
+            html += '<th style="background:#e8f5e9; color:#2e7d32;">' + k + '</th>';
+          });
+        }
+        html += '</tr>';
+        data.rows.forEach(row => {
+          html += '<tr>';
+          data.columns.forEach(c => {
+            let val = row[c.name];
+            if (val === null) val = '<span style="color:#ccc;">NULL</span>';
+            else if (typeof val === 'string' && val.length > 80) val = val.substring(0, 80) + '...';
+            html += '<td>' + val + '</td>';
+          });
+          if (decrypt) {
+            Object.keys(row).filter(k => k.endsWith('_decrypted')).forEach(k => {
+              let val = row[k];
+              if (val && val.length > 120) val = val.substring(0, 120) + '...';
+              html += '<td class="dec-field">' + (val || '') + '</td>';
+            });
+          }
+          html += '</tr>';
+        });
+        html += '</table></div>';
+        // Pagination
+        if (data.totalPages > 1) {
+          html += '<div class="pagination" style="margin-top:12px;">';
+          if (data.page > 1) html += '<a href="#" onclick="browseTable(\'' + table + '\',' + (data.page-1) + ',' + decrypt + ');return false;">&laquo; Prev</a>';
+          for (let i = Math.max(1, data.page-3); i <= Math.min(data.totalPages, data.page+3); i++) {
+            html += '<a href="#" class="' + (i===data.page?'active':'') + '" onclick="browseTable(\'' + table + '\',' + i + ',' + decrypt + ');return false;">' + i + '</a>';
+          }
+          if (data.page < data.totalPages) html += '<a href="#" onclick="browseTable(\'' + table + '\',' + (data.page+1) + ',' + decrypt + ');return false;">Next &raquo;</a>';
+          html += '</div>';
+        }
+        tv.innerHTML = html;
+      } catch (e) {
+        tv.innerHTML = '<div style="color:red; padding:20px;">Failed to load table data</div>';
+      }
+    }
+  </script>
+</body>
+</html>

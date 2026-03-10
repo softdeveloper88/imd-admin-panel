@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:title>A DIY Guide to Telemedicine for Clinicians</dc:title>
+    <dc:creator>S. B. Bhattacharyya</dc:creator>
+    <dc:language>En</dc:language>
+    <dc:rights></dc:rights>
+    <dc:publisher>Springer Singapore, Singapore</dc:publisher>
+    <dc:identifier id="bookid">978-981-10-5305-4</dc:identifier>
+    <meta name="cover" content="A978-981-10-5305-4_CoverFigure_IMG"/> 
+    <meta name="epub-converter-version" content="v3.45a"/>
+  </metadata>
+
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="css1" href="springer_epub.css" media-type="text/css"/>
+    <!--item id="css2" href="springer_classic.css" media-type="text/css"/-->
+    <item id="A420024_1_En_1_Chapter" href="A420024_1_En_1_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_2_Chapter" href="A420024_1_En_2_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_3_Chapter" href="A420024_1_En_3_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_4_Chapter" href="A420024_1_En_4_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_5_Chapter" href="A420024_1_En_5_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_6_Chapter" href="A420024_1_En_6_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_7_Chapter" href="A420024_1_En_7_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_8_Chapter" href="A420024_1_En_8_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_9_Chapter" href="A420024_1_En_9_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_10_Chapter" href="A420024_1_En_10_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_11_Chapter" href="A420024_1_En_11_Chapter.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_BookFrontmatter_OnlinePDF" href="A420024_1_En_BookFrontmatter_OnlinePDF.html" media-type="application/xhtml+xml"/>
+<item id="ACoverHTML" href="ACoverHTML.html" media-type="application/xhtml+xml"/>
+<item id="A420024_1_En_BookBackmatter_OnlinePDF" href="A420024_1_En_BookBackmatter_OnlinePDF.html" media-type="application/xhtml+xml"/>
+
+    <item id="contact.gif" href="contact.gif" media-type="image/gif"/>
+<item id="sidebar.gif" href="sidebar.gif" media-type="image/gif"/>
+<item id="A420024_1_En_6_Chapter_Equa_IMG" href="A420024_1_En_6_Chapter_Equa.gif" media-type="image/gif"/>
+<item id="A420024_1_En_9_Fig1_HTML_IMG" href="A420024_1_En_9_Fig1_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_6_Chapter_Equb_IMG" href="A420024_1_En_6_Chapter_Equb.gif" media-type="image/gif"/>
+<item id="A420024_1_En_7_Fig1_HTML_IMG" href="A420024_1_En_7_Fig1_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_9_Fig2_HTML_IMG" href="A420024_1_En_9_Fig2_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_5_Fig3_HTML_IMG" href="A420024_1_En_5_Fig3_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_6_Chapter_Equc_IMG" href="A420024_1_En_6_Chapter_Equc.gif" media-type="image/gif"/>
+<item id="A420024_1_En_5_Fig5_HTML_IMG" href="A420024_1_En_5_Fig5_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_10_Chapter_Equb_IMG" href="A420024_1_En_10_Chapter_Equb.gif" media-type="image/gif"/>
+<item id="A420024_1_En_5_Fig2_HTML_IMG" href="A420024_1_En_5_Fig2_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_10_Chapter_Equc_IMG" href="A420024_1_En_10_Chapter_Equc.gif" media-type="image/gif"/>
+<item id="A420024_1_En_8_Fig1_HTML_IMG" href="A420024_1_En_8_Fig1_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_5_Fig6_HTML_IMG" href="A420024_1_En_5_Fig6_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_10_Chapter_Equa_IMG" href="A420024_1_En_10_Chapter_Equa.gif" media-type="image/gif"/>
+<item id="A420024_1_En_5_Fig1_HTML_IMG" href="A420024_1_En_5_Fig1_HTML.gif" media-type="image/gif"/>
+<item id="A420024_1_En_BookFrontmatter_Figa_HTML_IMG" href="A420024_1_En_BookFrontmatter_Figa_HTML.png" media-type="image/png"/>
+<item id="A978-981-10-5305-4_CoverFigure_IMG" href="A978-981-10-5305-4_CoverFigure.jpg" media-type="image/jpeg"/>
+<item id="A420024_1_En_5_Fig4_HTML_IMG" href="A420024_1_En_5_Fig4_HTML.gif" media-type="image/gif"/>
+
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="ACoverHTML"/>
+<itemref idref="A420024_1_En_BookFrontmatter_OnlinePDF"/>
+<itemref idref="A420024_1_En_1_Chapter"/>
+<itemref idref="A420024_1_En_2_Chapter"/>
+<itemref idref="A420024_1_En_3_Chapter"/>
+<itemref idref="A420024_1_En_4_Chapter"/>
+<itemref idref="A420024_1_En_5_Chapter"/>
+<itemref idref="A420024_1_En_6_Chapter"/>
+<itemref idref="A420024_1_En_7_Chapter"/>
+<itemref idref="A420024_1_En_8_Chapter"/>
+<itemref idref="A420024_1_En_9_Chapter"/>
+<itemref idref="A420024_1_En_10_Chapter"/>
+<itemref idref="A420024_1_En_11_Chapter"/>
+<itemref idref="A420024_1_En_BookBackmatter_OnlinePDF"/>
+
+  </spine>
+  <guide>
+    <reference type="cover" title="Cover" href="ACoverHTML.html"/>
+    <reference type="toc" title="Table of Contents" href="A420024_1_En_BookFrontmatter_OnlinePDF.html#Toc"/>
+    <reference type="text" title="1. Introduction" href="A420024_1_En_1_Chapter.html"/>
+  </guide>
+</package>

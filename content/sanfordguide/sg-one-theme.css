@@ -1,0 +1,600 @@
+/**
+* SG One Theme Styles
+**/
+@font-face {
+font-family: "Montserrat";
+src: local('Montserrat'),
+      local('Montserrat-Regular'),
+      url("./Montserrat-Regular.otf");
+}
+
+@font-face {
+font-family: "SourceSerifPro";
+src: url("./SourceSerifPro-Regular.otf.woff") format("woff");
+}
+
+@font-face {
+font-family: "Nunito Sans";
+src: local('Nunito Sans'),
+      local('NunitoSans'),
+      url("./NunitoSans-Regular.ttf");
+}
+@font-face {
+  font-family: "Nunito Sans";
+  src: url("./NunitoSans-Bold.ttf");
+  font-weight: bold;
+}
+
+body.sg-one-theme {
+  margin: 0 0 0 0;
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-size: 15px;
+}
+
+body.sg-one-theme #mobile-container-div {
+  margin: 0 0 0 0;
+  padding: 0 0 0 0;
+  border: none;
+  width: 100vw;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* the headers in drug pages, are not inside divs, so we need to cover them here as well */
+/* exclude h2 and "collection-text" (id update) from margins */
+body.sg-one-theme #mobile-container-div > span > div > *:not(h2):not(.collection-text),
+body.sg-one-theme #mobile-container-div > span > div > div > div > *:not(h2),
+body.sg-one-theme #mobile-container-div > div > div,
+body.sg-one-theme #mobile-container-div > h3:not(.recommended-spectrum):not(.active-spectrum),
+body.sg-one-theme #mobile-container-div > h4,
+body.sg-one-theme #mobile-container-div > h5 {
+  margin-left: 1.25rem;
+  margin-right: 1.25rem;
+}
+
+/* do not show the Summary in the body of the page */
+body.sg-one-theme h6.search-description {
+  display: none;
+}
+
+body.sg-one-theme #trade-name {
+  padding-left:1.25rem;
+}
+
+/**
+ * Tyler: note some css for the headers is different in the apps than web2, such as padding. This is to ensure the WebViews render properly and
+ * deal with the tighter screen sizing. We will likely move this into break points when we go live with the raw content
+ */
+body.sg-one-theme h2 {
+  color: #FFFFFF;
+  font-size: 22px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 500;
+  margin-top: .25rem;
+  margin-right: 1.25rem;
+  margin-bottom: 1rem;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 10px;
+  background: #004C86;
+  background: -webkit-gradient(linear, left top, right top, color-stop(0%,#004C86), color-stop(100%,#3E8EC6));
+  background: -webkit-linear-gradient(left, #004C86 0%, #3E8EC6 100%);
+  background: -o-linear-gradient(left, #004C86 0%, #3E8EC6 100%);
+  background: -ms-linear-gradient(left, #004C86 0%, #3E8EC6 100%);
+  filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#004C86', endColorstr='#3E8EC6',GradientType=1 );
+  -ms-filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#004C86', endColorstr='#3E8EC6',GradientType=1 );
+  background: linear-gradient(left, #004C86 0%, #3E8EC6 100%);
+}
+
+body.sg-one-theme h3:not(.recommended-spectrum):not(.active-spectrum) {
+  color: #000000;
+  margin-top: .25rem;
+  margin-bottom: 0;
+  font-family: 'Montserrat', sans-serif;
+  /** note this is different for the apps. iOS WebViews want this header to be 600 to render the weight correctly **/
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 24px;
+  background: #FFFFFF;
+}
+
+body.sg-one-theme h3.recommended-spectrum,
+body.sg-one-theme h3.active-spectrum {
+  padding-top: .25rem;
+  padding-bottom: .25rem;
+  padding-left: 18px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  text-transform: uppercase;
+}
+
+body.sg-one-theme h4 {
+  color: #000000;
+  /** note this is different for the apps. iOS WebViews want this header to be 600 to render the weight correctly **/
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 17px;
+  margin-top: .25rem;
+  margin-bottom: 0;
+}
+
+body.sg-one-theme h5 {
+  color: #000000;
+  /** note this is different for the apps. iOS WebViews want this header to be 600 to render the weight correctly **/
+  font-weight: 600;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  margin-top: .25rem;
+  margin-bottom: 0;
+}
+
+body.sg-one-theme .ui-icon-triangle-1-e,
+body.sg-one-theme .ui-icon-triangle-1-s {
+  margin-left: -5px;
+}
+
+body.sg-one-theme a {
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  /*font-size: 17pt;*/
+  color: #007dde;
+  text-decoration: none;
+  overflow-wrap: break-word;
+}
+
+body.sg-one-theme table {
+  margin-top: .5rem;
+  margin-bottom: .5rem;
+}
+
+body.sg-one-theme #content-page-header {
+  background-color: #f5f5f5;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  position: sticky;
+  position: -webkit-sticky;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 99;
+}
+
+body.sg-one-theme #content-page-header h5 {
+  font-size: 28px;
+  line-height: 34px;
+  font-family: 'SourceSerifPro', sans-serif;
+  padding-left: 12pt;
+  padding-bottom: 12px; /* corresponds with #content-page-header[padding-top] */
+  font-weight: 400;
+  color: #444444;
+}
+
+/* Ellipsize fixed page headers */
+body.sg-one-theme #content-page-header.fixed-page-header > h5 {
+  max-height: 1.25em;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.sg-one-theme .ui-accordion .ui-accordion-content {
+  padding: 1em 1em;
+}
+
+body.sg-one-theme .ui-accordion div.ui-accordion-content {
+  padding: 0em 1em;
+}
+
+body.sg-one-theme #activity-spectrum::after {
+    content: "\A";
+    white-space: pre;
+}
+
+body.sg-one-theme GuideTOC {
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-size: 18px;
+  background-color: #1a73b1;
+  color: #ffffff;
+  padding-left: 12pt;
+  padding-right: 12pt;
+  display: inline-block;
+  position: relative;
+
+  /* Border Radius */
+  -webkit-border-top-right-radius: 4px;
+  -webkit-border-bottom-right-radius: 4px;
+  -moz-border-radius-topright: 4px;
+  -moz-border-radius-bottomright: 4px;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+
+  /* Box Shadow */
+  -webkit-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+  -moz-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+  box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+}
+
+body.sg-one-theme GuideTOC.active {
+  width: 288px;
+  z-index: 99;
+
+  /* Border Radius */
+  -webkit-border-bottom-right-radius: 0;
+  -moz-border-radius-bottomright: 0;
+  border-bottom-right-radius: 0;
+}
+
+body.sg-one-theme GuideTOC.active #toc-container {
+  display: block;
+  max-height: 85vh;
+  overflow: scroll;
+}
+
+body.sg-one-theme GuideTOC.active a.toc-close {
+  display: inline;
+}
+
+body.sg-one-theme GuideTOC #toc-container {
+  display: none;
+  position: absolute;
+  background: #ffffff;
+  width: 320px;
+  left: 0;
+
+  /* Box Shadow */
+  -webkit-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+  -moz-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+  box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+}
+
+body.sg-one-theme #toc-container ul {
+  margin: 0 0 0 0;
+  padding: 0 0 0 0;
+}
+
+body.sg-one-theme #toc-container ul li{
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-weight: 700;
+  color: #000000;
+  font-size: 17px;
+  border-top: 1px solid #f5f5f5;
+  border-bottom: 1px solid #f5f5f5;
+  padding-left: 40pt;
+  height: 2em;
+  padding-top: .5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /*display: inline-table;*/
+}
+
+body.sg-one-theme #toc-container ul li.toc-indent{
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-weight: 400;
+  color: #000000;
+  font-size: 15px;
+  border-top: 1px solid #f5f5f5;
+  border-bottom: 1px solid #f5f5f5;
+  padding-left: 52pt;
+  height: 2em;
+  padding-top: .5em;
+}
+
+body.sg-one-theme #toc-container ul li::before{
+  content: "";
+}
+
+body.sg-one-theme #toc-container ul li img.comments{
+  position: absolute;
+  left: 12pt;
+  height: 1.3em;
+}
+
+body.sg-one-theme #toc-container ul li img.usage-and-dosing{
+  position: absolute;
+  left: 12pt;
+  height: 1.3em;
+}
+
+body.sg-one-theme #toc-container ul li img.spectrum{
+  position: absolute;
+  left: 12pt;
+  height: 1.2em;
+}
+
+body.sg-one-theme #toc-container ul li img.adverse-effects{
+  position: absolute;
+  left: 12pt;
+  height: 1.2em;
+}
+
+body.sg-one-theme #toc-container ul li img.pharma{
+  position: absolute;
+  left: 12pt;
+  height: 1.2em;
+}
+
+body.sg-one-theme #toc-container ul li img.drug-interactions{
+  position: absolute;
+  left: 12pt;
+  height: 1.5em;
+}
+
+body.sg-one-theme GuideTOC a#toc-toggle-switch {
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-size: 18px;
+  color: #ffffff;
+}
+
+body.sg-one-theme GuideTOC a.toc-close {
+  display: none;
+}
+
+body.sg-one-theme a.toc-close::before {
+  content: '\00D7'; /* same as &times; */
+  color: #ffffff;
+  position: absolute;
+  right: 12pt;
+  font-size: 1.5em;
+  line-height: 1em;
+}
+
+body.sg-one-theme GuideTOC span.chevron-right::after {
+  content: '\276D'; /* tall right arrow: also alternatively \232A */
+  color: #ffffff;
+  position: absolute;
+  right: 8pt;
+}
+
+body.sg-one-theme GuideTOC.active span.chevron-right {
+  display: none;
+}
+
+body.sg-one-theme #back-to-top {
+  right: 0;
+  bottom: 0;
+  background: url('./icon_top_of_page.svg');
+  width: 37px;
+  height: 37px;
+  padding: 0 0 0 0;
+  background-size: 37px 37px;
+  position: fixed;
+}
+
+/***
+ * Inline list styles.
+ **/
+body.sg-one-theme ul {
+  list-style: none; /* Remove default bullets */
+  padding-inline-start: 20px; /* Override browser default indentation per requirement. */
+}
+body.sg-one-theme li {
+  margin-top: 0.5em;
+  margin-left: 1rem;
+}
+
+body.sg-one-theme ul > li::before {
+  content: "\25a0";  /* Add content: \2022 is the CSS Code/unicode for a bullet */
+  color: #004c86;
+  font-size: 0.7em;
+  font-weight: bold; /* If you want it to be bold */
+  display: inline-block; /* Needed to add space between the bullet and the text */
+  width: 1em; /* Also needed for space (tweak if needed) */
+  margin-left: -1.1em; /* Also needed for space (tweak if needed) */
+  vertical-align: middle;
+  padding-top: .15em;
+  margin-top: .15em;
+  padding-right: .25em;
+  float: left;
+}
+
+
+/***
+ * Version Info
+ **/
+body.sg-one-theme VersionInfo {
+  display:block;
+  text-align: right;
+  font-size: 12px;
+  padding-top: 12pt;
+  padding-right: 12pt;
+}
+
+body.sg-one-theme.has-notes VersionInfo {
+  margin-bottom: -1.0em;
+}
+
+/***
+ * Tooltip
+ **/
+body.sg-one-theme a.abbreviation {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted red;
+}
+body.sg-one-theme .ui-tooltip, body.sg-one-theme .arrow:after {
+    background: #cd0202;
+  }
+body.sg-one-theme .ui-tooltip {
+    padding: 3px 12px;
+    color: white;
+    border-radius: 2px;
+    border: none;
+
+    /* Box Shadow */
+    -webkit-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+    -moz-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+    box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+
+    font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+    font-size: 14px;
+  }
+body.sg-one-theme .arrow {
+    width: 70px;
+    height: 16px;
+    overflow: hidden;
+    position: absolute;
+    left: 50%;
+    margin-left: -35px;
+    top: -16px;
+  }
+body.sg-one-theme .arrow:after {
+    content: "";
+    position: absolute;
+    left: 20px;
+    bottom: -20px;
+    width: 12px;
+    height: 25px;
+
+    /* Box Shadow */
+    -webkit-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+    -moz-box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+    box-shadow: 1px 3px 3px 0 rgba(0,0,0,0.25);
+
+    -webkit-transform: rotate(45deg);
+    -ms-transform: rotate(45deg);
+    transform: rotate(45deg);
+  }
+
+/**
+ * Bookmarks and Notes
+ **/
+body.sg-one-theme BookmarkControls {
+  display: block;
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-size: 18px;
+  padding-right: 12pt;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
+body.sg-one-theme a#bookmark-badge,
+body.sg-one-theme a#notes-badge {
+  display: block;
+  float: left;
+  padding-left: 6pt;
+}
+
+body.sg-one-theme a#bookmark-badge > img {
+  width: 25px;
+}
+
+body.sg-one-theme a#bookmark-badge.has-bookmark > img {
+  width: 18px;
+}
+
+body.sg-one-theme a#notes-badge > img {
+  width: 27px;
+}
+
+body.sg-one-theme a#notes-badge.has-notes > img {
+  width: 23px;
+}
+
+body.sg-one-theme UserNotes {
+  background-color: #bdedff;
+  font-family: 'Nunito Sans', 'Helvetica Neue', sans-serif;
+  font-size: 17px;
+  padding: 10px 10px;
+  margin-left: 6pt;
+  margin-right: 6pt;
+  margin-bottom: 1em;
+  /*border: 1px solid #a3d4f4;*/
+  display: none;
+  max-height: 2.7em;
+  width: auto;
+  position: relative;
+  z-index: -1;
+  white-space: pre-line;
+}
+
+body.sg-one-theme UserNotes.has-notes {
+  display: block;
+  overflow: hidden;
+}
+
+body.sg-one-theme a.notes-readmore-toggle {
+  position: relative;
+  right: 1.5em;
+  float: right;
+  top: -2.8em;
+  background-color: #bdedff;
+  width: auto;
+}
+
+/*** NOTES PAGE CURL AND PAPERCLIP ***/
+body.sg-one-theme UserNotes div.bottom-right-curl {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background-color: #fff;
+  background: linear-gradient(135deg, #a3d4f4 0%, #a3d4f4 50%, #fff 60%);
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
+body.sg-one-theme UserNotes div.left-border {
+  height: 100%;
+  margin-right: 0;
+  margin-left: 0;
+  margin-bottom: 0;
+  margin-top: 0;
+  position: absolute;
+  border-left: 1px solid #a3d4f4;
+  left: 0;
+  top: 0;
+}
+
+
+body.sg-one-theme UserNotes div.right-border {
+  height: 100%;
+  margin-right: 0;
+  margin-left: 0;
+  margin-bottom: 0;
+  margin-top: 0;
+  position: absolute;
+  border-right: 1px solid #a3d4f4;
+  right: 0;
+  bottom: 14px;
+}
+
+body.sg-one-theme UserNotes div.top-border {
+  width: 100%;
+  margin-right: 0;
+  margin-left: 0;
+  margin-bottom: 0;
+  margin-top: 0;
+  position: absolute;
+  border-bottom: 1px solid #a3d4f4;
+  left: 0;
+  top: 0;
+}
+
+body.sg-one-theme UserNotes div.bottom-border {
+  width: 100%;
+  margin-right: 0;
+  margin-left: 0;
+  margin-bottom: 0;
+  margin-top: 0;
+  position: absolute;
+  border-bottom: 1px solid #a3d4f4;
+  right: 14px;
+  bottom: 0;
+}
+
+body.sg-one-theme:not(.has-notes) #notes-paperclip {
+  display: none;
+}
+
+body.sg-one-theme #notes-paperclip {
+  height: 24px;
+}
+
+/*** HIDES LAST UPDATED LABEL ON BOTTOM OF PAGE ***/
+body.sg-one-theme #lastUpdated {
+  display: none;
+}

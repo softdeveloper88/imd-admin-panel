@@ -1,0 +1,1167 @@
+<html><head><style>
+a.textHighlight{
+    background-color:yellow;
+    text-decoration:none;
+    cursor:pointer;
+    color:black;
+}
+</style>
+
+
+<style type="text/css">
+
+
+
+.highlighted {background-color: #ffffff;border: 1px solid #000000;color: #000000;border-radius: 4px; padding-left: 2px;padding-right: 2px;text-shadow: none;}.highlight {
+    background-color: yellow;
+}
+.highlightYellow {
+    background-color: yellow;
+}
+
+.highlightGreen {
+    background-color: #c1ed72;
+}
+
+.highlightBlue {
+    background-color: #acd8fd;
+}
+
+.highlightRed {
+    background-color: #ffb1cb;
+}
+
+.highlightBanafsh {
+    background-color: #d8b2ff;
+}
+
+.highlightNote {
+    border-bottom: 2px solid red;
+    
+}
+
+.highlightedCurrent {
+    background: -webkit-gradient(linear, left top, left bottom, from(#FFFF00), to(#EDD000)) repeat-x 0px 0px; /* 0px is top offset */
+    border: 1px solid #000000;
+    color: #000000;
+    font-weight: bold;
+    border-radius: 4px;
+    padding-left: 2px;
+    padding-right: 2px;
+    text-shadow: none;
+}
+::-webkit-scrollbar {
+    width: 0px;
+}
+
+* {
+    zoom:1.0001;
+}
+</style>
+
+<script type="text/javascript">
+
+
+
+
+var parentNodeId = '';
+var rangeIntersectsNode = (typeof window.Range != "undefined"
+&& Range.prototype.intersectsNode) ?
+
+
+
+
+function(range, node) {
+    return range.intersectsNode(node);
+} :
+
+function(range, node) {
+    var nodeRange = node.ownerDocument.createRange();
+    try {
+        nodeRange.selectNode(node);
+    } catch (e) {
+        nodeRange.selectNodeContents(node);
+    }
+    
+    return range.compareBoundaryPoints(Range.END_TO_START, nodeRange) == -1 &&
+    range.compareBoundaryPoints(Range.START_TO_END, nodeRange) == 1;
+};
+
+var textFound = false;
+var questionisdirty = 0;
+var totalhighlightcount = 0;
+
+function getAllTextNodesIn(node){
+    textFound = false;
+    previousNodeIsText = false;
+    previousNodeIsBR = false;
+    return getTextNodesIn(node);
+}
+
+var highlightArray = new Array();
+var originalQuestionText;
+var originalExplanationText;
+
+function saveCurrentValues(){
+    originalQuestionText =  document.getElementById('question').nodeValue;
+    originalExplanationText =  document.getElementById('explanation').nodeValue;
+    
+}
+
+function refresh(){
+    document.getElementById('question').nodeValue = originalQuestionText;
+    document.getElementById('explanation').nodeValue = originalExplanationText;
+    
+    var tempHighlightArray = highlightArray;
+    highlightArray = null;
+    highlightArray = new Array();
+    
+    for(i = 0; i < tempHighlightArray.length;i++){
+        if(tempHighlightArray[i]!=null){
+            select(tempHighlightArray[i].elementId, tempHighlightArray[i].startOffset - 1, tempHighlightArray[i].endOffset - 1, tempHighlightArray[i].id);
+        }
+    }
+    
+    tempHighlightArray = null;
+}
+
+function Highlight(){
+    this.startOffset = 0;
+    this.endOffset = 0;
+    this.objectId = 1;
+    this.elementId = null;
+    this.id = 0;
+}
+
+function Highlight(start, end, elementId, temphighlightid){
+    this.startOffset = start;
+    this.endOffset = end;
+    this.elementId = elementId;
+    if(elementId == 'question'){
+        this.objectId = 0;
+    }else
+    if(elementId == 'explanation'){
+        this.objectId = -1;
+    }else if(elementId == 'abstract'){
+        this.objectId = -2;
+    }else {
+        this.objectId = 1;
+    }
+    this.id = temphighlightid;
+}
+
+function addHighlightObject(obj){
+    for(i = 0; i < highlightArray.length; i++){
+        
+        if(highlightArray[i] == null)
+        continue;
+        
+        if(highlightArray[i].id == obj.id){
+            highlightArray[i] = obj;
+            return;
+        }
+    }
+    totalhighlightcount++;
+    highlightArray[highlightArray.length] = obj;
+}
+
+function removeHighlightObject(temphighlightid){
+    for(i = 0; i < highlightArray.length; i++){
+        
+        if(highlightArray[i] == null)
+        continue;
+        
+        if(highlightArray[i].id == temphighlightid){
+            dirty = 1;
+            questionisdirty = 1;
+            highlightArray[i] = null;
+            totalhighlightcount--;
+            return;
+        }
+    }
+    
+}
+
+function checkIfHighlightObjectNull(index){
+    if(highlightArray[index] == null)
+    return 0;
+    
+    return 1;
+}
+
+
+var previousNodeIsText = false;
+var previousNodeIsBR   = false;
+
+function getTextNodesIn(node) {
+    
+    var textNodes = [];
+    if (node.nodeType == 3) {
+        if((trim(node.nodeValue).length > 0) && !textFound){
+            
+            textFound = true;
+        }
+        previousNodeIsText = true;
+        previousNodeIsBR = false;
+        textNodes.push(node);
+    } else {
+        var children = node.childNodes;
+        if((node.nodeName == 'P'  && textFound)|| (node.nodeName=='LI') || (node.nodeName=='BLOCKQUOTE')|| (node.nodeName=='TD' && textFound) || (node.nodeName=='IMG' && textFound) || (node.nodeName=='BR' && previousNodeIsText)){
+            
+            if(node.nodeName == 'TD'){
+                if(node.childNodes.length > 0){
+                    if(node.childNodes[0].nodeName == 'OL' ||node.childNodes[0].nodeName == 'UL' || node.childNodes[0].nodeName == 'P' ){
+                        //do nothing
+                    }else{
+                        
+                        textNodes.push(node);
+                    }
+                }else{
+                    textNodes.push(node);
+                }
+                previousNodeIsBR = false;
+            }else{
+                if(node.nodeName == 'BLOCKQUOTE'){
+                    if(node.childNodes.length > 0){
+                        
+                        if(node.childNodes[0].nodeName == 'IMG' || node.childNodes[0].nodeType == 3 || node.childNodes[0].nodeName == 'A'){
+                            //alert('pushed ' + node.childNodes[0].nodeType);
+                            textNodes.push(node);
+                        }
+                    }
+                    previousNodeIsBR = false;
+                }else
+                if(node.nodeName == 'BR'){
+                    if(!previousNodeIsBR){
+                        textNodes.push(node);
+                    }
+                    previousNodeIsBR = true;
+                }else{
+                    previousNodeIsBR = false;
+                    textNodes.push(node);
+                }
+            }
+            
+        }
+        
+        previousNodeIsText = false;
+        for (var i = 0, len = children.length; i < len; ++i) {
+            textNodes.push.apply(textNodes, getTextNodesIn(children[i]));
+        }
+    }
+    return textNodes;
+}
+
+function isSkipCountNode(str, foundText){
+    
+    if((str== 'P' && foundText)||(str =='TD')|| (str=='IMG') || (str=='BR') || (str=='LI') || (str=='BLOCKQUOTE')){
+        return true;
+    }
+    return false;
+}
+
+var sel = new Array();
+
+function customSetSelectionRange(el,start, end){
+    
+    if (document.createRange && window.getSelection) {
+        
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var textNodes = getAllTextNodesIn(el);
+        
+        var charCount = 0;
+        var foundText = false;
+        
+        for (var i = 0, textNode; textNode = textNodes[i++]; ) {
+            // if start node of range add number of characters of previous nodes to start offset of range from current node to get the total start value
+            
+            if(isSkipCountNode(textNode.nodeName, foundText)){
+                // alert("node name : " + textNode.nodeName + " value : " +  textNode.nodeValue);
+                charCount = charCount + 1;
+            }
+            
+            if(textNode.nodeType == 3 && textNode.nodeValue != null && textNode.nodeValue.length > 0){
+                foundText = true;
+            }
+            if(textNode == range.startContainer){
+                //need 1-based index so add offset of 1
+                startOffset = charCount + range.startOffset + 1;
+                
+            }
+            //if end node of range add number of characters of previous nodes to end offset of range from current node to get the total end value
+            if(textNode == range.endContainer){
+                
+                //need 1-based index so add offset of 1
+                endOffset =  charCount + range.endOffset + 1;
+                //if we find the end node no further processing is needed. So break from the loop
+                break;
+            }
+            //don't add number of characters if text node doesn't contain any text
+            if(textNode.nodeValue != null){
+                charCount = charCount + textNode.nodeValue.length;
+            }
+            
+        }
+    }
+}
+
+function setSelectionRange(el, start, end) {
+    
+    if (document.createRange && window.getSelection) {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        textFound = false;
+        previousNodeIsText = false;
+        var textNodes = getAllTextNodesIn(el);
+        var foundStart = false;
+        var foundText = false;
+        
+        var charCount = 0, endCharCount;
+        
+        try{
+            for (var i = 0, textNode; textNode = textNodes[i++]; ) {
+                if(isSkipCountNode(textNode.nodeName, foundText)){
+                    
+                    //                if((textNode.nodeName == 'P')||(textNode.nodeName=='TD')|| (textNode.nodeName=='IMG') || (textNode.nodeName=='BR') || (textNode.nodeName == 'LI')){
+                        
+                        start = start - 1;
+                        end = end - 1;
+                        if(start < 0){
+                            start = 0;
+                        }
+                        if(end < 0){
+                            end = 0;
+                        }
+                        
+                        continue;
+                    }
+                    
+                    if(textNode.nodeType == 3 && textNode.nodeValue != null && textNode.nodeValue.length > 0){
+                        foundText = true;
+                    }
+                    
+                    // if(trim(textNode.nodeValue).length == 0)
+                    //    continue;
+                    
+                    endCharCount = charCount + textNode.length;
+                    if (!foundStart && start >= charCount && (start < endCharCount || (start == endCharCount && i < textNodes.length))) {
+                        range.setStart(textNode, start - charCount);
+                        foundStart = true;
+                    }
+                    
+                    
+                    if (foundStart && end <= endCharCount) {
+                        if(textNode.nodeValue.length > 0){
+                            if(end <= charCount){
+                                range.setEnd(textNode, 1);
+                                
+                            }else{
+                                range.setEnd(textNode, end - charCount);
+                            }
+                            
+                            break;
+                        }
+                    }
+                    
+                    
+                    charCount = endCharCount;
+                }
+            }catch(err){
+                // alert(err.message);
+                // alert(textNode.text);
+            }
+            sel = new Array();
+            
+            if(foundStart){
+                
+                
+                sel.push(range);
+                //var sel = document.getSelection();
+                //sel.removeAllRanges();
+                //sel.addRange(range);
+                //alert(sel.rangeCount);
+                //alert(sel);
+                return sel;
+            }else{
+                return null;
+            }
+        }
+        return null;
+    }
+    
+    function trim(str){
+        return str.replace(/^\s+|\s+$/g, '');
+    }
+    
+    //This function will loop to find the node id named explanation or question. We want to know if highlight was made in either of
+    // those divs
+    function findParentNodeId(el) {
+        if (el.id == 'question' || el.id == 'explanation' || el.id == 'abstract'){
+            parentNodeId = el.id;
+            return el;
+        }
+        while (el.parentNode) {
+            el = el.parentNode;
+            if (el.id == 'question' || el.id == 'explanation' || el.id == 'abstract'){
+                parentNodeId = el.id;
+                return el;
+            }
+            
+        }
+        return null;
+    }
+    
+    var startOffset = 0;
+    var endOffset = 0;
+    var highlightSuccess = false;
+    // This function will process the range for given element (question or explanation) and set the start and end character indexes for java
+    function getCharacterCount(range,elementid){
+        
+        //initialize offsets
+        startOffset = 0;
+        endOffset = 0;
+        
+        previousNodeIsText = false;
+        textFound = false;
+        //get all text nodes in range. We don't care about other nodes.
+        var textNodes = getAllTextNodesIn(document.getElementById(elementid));
+        
+        var charCount = 0;
+        var foundText = false;
+        
+        
+        for (var i = 0, textNode; textNode = textNodes[i++]; ) {
+            
+            // if start node of range add number of characters of previous nodes to start offset of range from current node to get the total start value
+            
+            if(isSkipCountNode(textNode.nodeName, foundText)){
+                // alert("node name : " + textNode.nodeName + " value : " +  textNode.nodeValue);
+                charCount = charCount + 1;
+            }
+            
+            if(textNode.nodeType == 3 && textNode.nodeValue != null && textNode.nodeValue.length > 0){
+                foundText = true;
+            }
+            if(textNode == range.startContainer){
+                //need 1-based index so add offset of 1
+                startOffset = charCount + range.startOffset + 1;
+                
+            }
+            
+            //if end node of range add number of characters of previous nodes to end offset of range from current node to get the total end value
+            if(textNode == range.endContainer){
+                
+                //need 1-based index so add offset of 1
+                endOffset =  charCount + range.endOffset + 1;
+                //if we find the end node no further processing is needed. So break from the loop
+                break;
+            }
+            //don't add number of characters if text node doesn't contain any text
+            if(textNode.nodeValue != null){
+                charCount = charCount + textNode.nodeValue.length;
+            }
+            
+        }
+        
+    }
+    
+    function getParentNodeId(){
+        if(parentNodeId == 'question')
+        return 0;
+        if(parentNodeId == 'explanation')
+        return -1;
+        if(parentNodeId == 'abstract')
+        return -2;
+        return 1;
+    }
+    
+    function addHighlightWithValues(elementId, start, end, highlightId){
+        addHighlightObject(new Highlight(start,end,elementId,highlightId));
+        try{
+            select(elementId, start, end, highlightId);
+        }catch(err){
+            
+        }
+    }
+    function addHighlight() {
+        
+        if(totalhighlightcount > 80){
+            alert('You\'ve already entered ' + totalhighlightcount + ' highlights for this question.');
+            return;
+        }
+        highlightSuccess = false;
+        var returnVal = '';
+        var highlightId = Math.floor(Math.random()*200000);
+        parentNodeId = '';
+        var uniqueCssClass = "selection_" + (highlightId);
+        
+        var sel = window.getSelection();
+        
+        
+        if (sel != null && sel.length < 1) {
+            return;
+        }
+        var range = sel.getRangeAt(0);
+        var duplicate_range = range;
+        var startNode = range.startContainer, endNode = range.endContainer;
+        
+        // Split the start and end container text nodes, if necessary
+        if (endNode.nodeType == 3) {
+            endNode.splitText(range.endOffset);
+            range.setEnd(endNode, endNode.length);
+        }
+        
+        if (startNode.nodeType == 3) {
+            startNode = startNode.splitText(range.startOffset);
+            range.setStart(startNode, 0);
+        }
+        
+        // Create an array of all the text nodes in the selection
+        // using a TreeWalker
+        var containerElement = range.commonAncestorContainer;
+        if (containerElement.nodeType != 1) {
+            containerElement = containerElement.parentNode;
+        }
+        
+        if(findParentNodeId(containerElement) == null){
+            
+            alert("Invalid highlight. Please highlight phrase/text within question, abstract or explanation. If you are trying to highlight a whole paragraph, please try the selection again by moving the selection boundaries.");
+            return;
+            
+        }
+        getCharacterCount(duplicate_range,parentNodeId);
+        
+        var tempStartPoint = startOffset- 1;
+        var tempEndPoint = endOffset - 1;
+        if(tempStartPoint < 0 ){
+            tempStartPoint = 0;
+        }
+        if(tempEndPoint < 0){
+            tempEndPoint = 0;
+        }
+        
+        
+        select(parentNodeId, tempStartPoint, tempEndPoint, highlightId);
+        /*
+         var treeWalker = document.createTreeWalker(
+         containerElement,
+         NodeFilter.SHOW_TEXT,
+         // Note that Range.intersectsNode is non-standard but
+         // implemented in WebKit
+         function(node) {
+         return rangeIntersectsNode(range, node) ?
+         NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+         },
+         false
+         );
+         
+         var selectedTextNodes = [];
+         while (treeWalker.nextNode()) {
+         selectedTextNodes.push(treeWalker.currentNode);
+         }
+         
+         var textNode, anchorTag;
+         
+         // Place each text node within range inside a <a>
+         // element with the desired class
+         for (var i = 0, len = selectedTextNodes.length; i < len; ++i) {
+         textNode = selectedTextNodes[i];
+         anchorTag = document.createElement("a");
+         anchorTag.className = "textHighlight" + " " + uniqueCssClass;
+         anchorTag.setAttribute('href', 'javascript:deselect('+highlightId+')');
+         textNode.parentNode.insertBefore(anchorTag, textNode);
+         anchorTag.appendChild(textNode);
+         }
+         */
+        
+        dirty = 1;
+        questionisdirty = 1;
+        highlightSuccess = true;
+        
+    }
+    
+    function select(elementId, start, end, highlightId) {
+        
+        var uniqueCssClass = "selection_" + (highlightId);
+        setSelectionRange(document.getElementById(elementId), start, end);
+        
+        //  var sel = window.getSelection();
+        
+        
+        
+        
+        
+        if (sel != null && sel.length < 1) {
+            return;
+        }
+        var range = sel[0];
+        
+        var startNode = range.startContainer, endNode = range.endContainer;
+        
+        addHighlightObject(new Highlight(start+1,end+1,elementId, highlightId));
+        
+        // Split the start and end container text nodes, if necessary
+        if (endNode.nodeType == 3) {
+            endNode.splitText(range.endOffset);
+            range.setEnd(endNode, endNode.length);
+        }
+        
+        if (startNode.nodeType == 3) {
+            startNode = startNode.splitText(range.startOffset);
+            range.setStart(startNode, 0);
+        }
+        
+        // Create an array of all the text nodes in the selection
+        // using a TreeWalker
+        var containerElement = range.commonAncestorContainer;
+        if (containerElement.nodeType != 1) {
+            containerElement = containerElement.parentNode;
+        }
+        
+        var treeWalker = document.createTreeWalker(
+        containerElement,
+        NodeFilter.SHOW_TEXT,
+        // Note that Range.intersectsNode is non-standard but
+        // implemented in WebKit
+        function(node) {
+            return rangeIntersectsNode(range, node) ?
+            NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        },
+        false
+        );
+        
+        var selectedTextNodes = [];
+        while (treeWalker.nextNode()) {
+            selectedTextNodes.push(treeWalker.currentNode);
+        }
+        
+        var textNode, anchorTag;
+        
+        // Place each text node within range inside a <a>
+        // element with the desired class
+        for (var i = 0, len = selectedTextNodes.length; i < len; ++i) {
+            textNode = selectedTextNodes[i];
+            anchorTag = document.createElement("a");
+            anchorTag.className = "textHighlight" + " " + uniqueCssClass;
+            anchorTag.setAttribute('href', 'javascript:deselect('+highlightId+')');
+            textNode.parentNode.insertBefore(anchorTag, textNode);
+            anchorTag.appendChild(textNode);
+        }
+    }
+    
+    function deselect(highlightId) {
+        var uniqueCssClass = "selection_" + (highlightId);
+        var anchorTags = document.body.getElementsByClassName(uniqueCssClass),
+        anchorTag, parentNode;
+        
+        removeHighlightObject(highlightId);
+        
+        // Convert anchorTags to an array to prevent live updating of
+        // the list as we remove the anchorTags
+        anchorTags = Array.prototype.slice.call(anchorTags, 0);
+        for (var i = 0, len = anchorTags.length; i < len; ++i) {
+            anchorTag = anchorTags[i];
+            parentNode = anchorTag.parentNode;
+            var childNodeLen = anchorTag.childNodes.length;
+            var j = 0;
+            while(j<childNodeLen){
+                var clone = anchorTag.childNodes[j].cloneNode(true);
+                parentNode.insertBefore(clone, anchorTag);
+                j++;
+            }
+            parentNode.removeChild(anchorTag);
+            
+            // Glue any adjacent text nodes back together
+            parentNode.normalize();
+        }
+    }
+    
+    
+    
+    </script>
+    <script language="javascript">corrToIncorr= 0;incorrToCorr = 0;incorrToIncorr = 0;prevAnswerID = 0;var correctID = 4;var timeSpent = 0;var isIncorrect = 0;var isSubmitted = 0;function answerClickedForStrikeout(selectedID){      dirty = 1;      strike(selectedID);}function strike(selectedID){      element = document.getElementById('AnswerText' + selectedID);       if(element.className==''){           strikeOutAnswers[selectedID]= 1;           element.setAttribute("class","strikeout");       }else{           strikeOutAnswers[selectedID]= 0;           element.setAttribute("class","");        }}function answerChanged(selectedID){isIncorrect=1;if(selectedID == correctID){ isIncorrect = 0;}if(prevAnswerID != 0 && prevAnswerID != selectedID){if(prevAnswerID != correctID){if(selectedID == correctID){incorrToCorr += 1;}else{incorrToIncorr += 1;}}else{corrToIncorr += 1;}}prevAnswerID = selectedID;window.location = "USMLEWorld-Question-Answer-Changed";}function showAbstract(){window.location = "USMLEWorld-Question-Show-Abstract";}function showDrugAd(){window.location = "USMLEWorld-Question-Show-Drug-Ad";}function showMedia(){window.location = "0";}function timeSpentpp(){timeSpent++;}</script><script>var dirty=0;var strikeOutAnswers = new Array();for(i=0; i <= 5;i++){   strikeOutAnswers[i]  = 0;}</script><style type="text/css">img {max-width: 270px; width: auto; height: auto}</style><meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=3.5; user-scalable=0"><style type="text/css">
+    /*
+     input[type="radio"] {
+     -webkit-appearance:none
+     line-height:2.0em;
+     margin-left:14px;
+     margin-top:12px;
+     -webkit-border-radius: 1em;
+     border-radius: 1em;
+     }
+     */
+    input{
+        margin-top:2px;
+    }
+    
+    a{
+        text-decoration:none;
+        color:#0C9CCE;
+    }
+    
+    button {
+        color:white;
+        font:1.4em  Arial, Helvetica, sans-serif;
+        font-size:100%;
+        padding:10px;
+        
+        background-color:#0c9cce;
+        border:0px solid #0c9cce;
+        -moz-border-radius:0px;
+        -webkit-border-radius:0px;
+        border-radius:0px;
+        border-bottom:0px solid #9f9f9f;
+        
+        cursor:pointer;
+    }
+    
+    
+    #exhibit {
+        color:white;
+        font:1.4em  Arial, Helvetica, sans-serif;
+        font-size:100%;
+        padding:10px;
+        background-color:#0c9cce;
+        border:0px solid #0c9cce;
+        -moz-border-radius:0px;
+        -webkit-border-radius:0px;
+        border-radius:0px;
+        border-bottom:0px solid #9f9f9f;
+        cursor:pointer;
+        text-decoration:none;
+    }
+    
+    
+    body
+    {
+        -webkit-tap-highlight-color: rgba(0,0,0,0);
+        font-family:  Arial, Helvetica;
+        padding-top: 8pt;
+        padding-left: 8pt;
+        padding-right: 8pt;
+        padding-bottom: 0pt;
+        line-height:1.4em;
+        -webkit-text-size-adjust: none;
+        -webkit-touch-callout:none;
+    }
+    
+    .Large{
+        font-size: 16pt;
+        
+    }
+    .Large td {
+        font-size: 16pt;
+        
+    }
+    .Normal{
+        font-size: 12pt;
+        
+    }
+    .Normal td{
+        font-size: 12pt;
+        
+    }
+    
+    .Medium{
+        font-size: 14pt;
+        
+    }
+    .Medium td{
+        font-size: 14pt;
+        
+    }
+    
+    
+    
+    span{
+        -webkit-tap-highlight-color: rgba(0,0,0,0);
+        font-family: Arial, Helvetica;
+        line-height:1.4em;
+        -webkit-text-size-adjust: none;
+    }
+    
+    .Normal .copyright{
+        font-size: 9pt;
+    }
+    
+    .Medium .copyright{
+        font-size: 11pt;
+    }
+    
+    .Large .copyright{
+        font-size: 13pt;
+    }
+    
+    .Normal .correctAnswerBlock td{
+        font-size: 10pt;
+    }
+    
+    .Medium .correctAnswerBlock td{
+        font-size: 12pt;
+    }
+    
+    .Large .correctAnswerBlock td{
+        font-size: 14pt;
+    }
+    
+    .AnswerChoiceTable{
+        padding-left:0pt;
+        padding-bottom:10pt;
+        
+    }
+    
+    .AnswerChoiceTable td{
+        vertical-align:top;
+    }
+    
+    .Large .AnswerChoiceTable td input{
+        margin-top:0.6em;
+    }
+    .Large .AnswerChoiceTable td img{
+        margin-top:0.4em;
+    }
+    
+    .Medium .AnswerChoiceTable td input{
+        margin-top:0.6em;
+    }
+    .Medium .AnswerChoiceTable td img{
+        margin-top:0.4em;
+    }
+    .Normal .AnswerChoiceTable td input{
+        margin-top:0.3em;
+        
+    }
+    .Normal .AnswerChoiceTable td img{
+        margin-top:0.3em;
+    }
+    /*
+     .AnswerChoiceTable input{
+     margin-top:0.5em;
+     }*/
+    
+    
+    .answerOptionNumber{
+        margin-right:4px;
+    }
+    
+    .greenAnswer
+    {
+        /*color: green;*/
+    }
+    
+    .redAnswer
+    {
+        /*color: red;*/
+    }
+    
+    .blueAnswer
+    {
+        color: blue;
+    }
+    
+    
+    .greenFont{
+        color:green;
+    }
+    
+    .redFont{
+        color:red;
+    }
+    
+    
+    .blueFont{
+        color:blue;
+    }
+    
+    
+    
+    .strikeOut {
+        text-decoration: line-through;
+    }
+    
+    #OverallContainerWithAbstract{
+        width: 650px;
+        margin-left:10px;
+        margin-top:20px;
+    }
+    #OverallContainer{
+        width: 750px;
+        margin-left:10px;
+        margin-top:20px;
+    }
+    
+    td.QBankAnswerIcon{
+        width:16px;
+        text-align: center;
+    }
+    
+    #AbstractContainer{
+        width: 400px;
+        margin-left:5px;
+        margin-top:20px;
+    }
+    
+    #AnswerChoices{
+        border-top: solid 1px #5590cc;
+        border-left: solid 1px #5590cc;
+        border-right: solid 1px #5590cc;
+        border-bottom: solid 4px #5590cc;
+        padding-right: 20px;
+    }
+    
+    .blueBackgroundDiv{
+        background-color:#e6f7f7; width:100%%; border: solid 1px #b5d6de;
+    }
+    </style><script>
+    function getRightIcon(){
+        var str ='<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAANCAMAAACXZR4WAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAABgUExURQCtACG9IVrOWnPOc5zWnLXWtQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAv7hYAAAAHdFJOU////////wAaSwNGAAAAQklEQVR42mzOwREAIAgDwaCR/kt2BBF05Lf3CdDnUNGfIHIHQYRGdwbQjHYCuCyaAWELLPYVpvcsj+OP8X993RRgAK2vA9pkmd9zAAAAAElFTkSuQmCC"/>';
+        return str;
+    }
+    
+    function getWrongIcon(){
+        var str ='<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAANCAMAAACXZR4WAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAABgUExURQAAANkAANwREffMzPCZmehmZuEzM/zu7uNERPW7u+ZVVfrd3d4iIut3dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAO4UQPoAAAABdFJOUwBA5thmAAAAUUlEQVR42mzPSQ7AIAwDQFzK2vb/321CLOQDuUQeIUekdJjxxM6DgCv7ugFCXWK5EJqL5BDNJi8w9Y69Z/POpYqsviYSfS6E/kXz7Kd//AIMAHTvAR54Dn9XAAAAAElFTkSuQmCC"/>';
+        return str;
+    }
+    
+    function noHighlight(){
+        alert('Highlight feature is available for question and explanation text only.')
+    }
+    </script><script type="text/javascript">
+    
+    // Helper function-- Recursively searches in elements and their child nodes
+    
+    var Qbank_Question_SearchResultCount = 0;
+    
+    function Qbank_Question_HighlightAllOccurencesOfStringForElement(element,keyword)
+    {
+        if (element)
+        {
+            // Verify that the element is a text node
+            if (element.nodeType == 3)
+            {
+                while (true)
+                {
+                    
+                    // Search for keyword in text node
+                    
+                    var value = element.nodeValue;
+                    var idx = value.toLowerCase().indexOf(keyword);
+                    
+                    // If not found, then abort
+                    if (idx < 0)
+                    {
+                        break;
+                    }
+                    
+                    // If found, create span and insert within the parent node
+                    var span = document.createElement("span");
+                    var text = document.createTextNode(value.substr(idx,keyword.length));
+                    
+                    span.appendChild(text);
+                    span.setAttribute("class","Qbank_Question_Search_Highlight");
+                    span.style.backgroundColor="yellow";
+                    
+                    text = document.createTextNode(value.substr(idx+keyword.length));
+                    element.deleteData(idx, value.length - idx);
+                    
+                    var next = element.nextSibling;
+                    
+                    element.parentNode.insertBefore(span, next);
+                    element.parentNode.insertBefore(text, next);
+                    element = text;
+                }
+            }
+            
+            else if (element.nodeType == 1)         // Element Node
+            {
+                if (element.nodeName.toLowerCase() != 'select')
+                {
+                    for (var i=element.childNodes.length-1; i>=0; i--)
+                    {
+                        Qbank_Question_HighlightAllOccurencesOfStringForElement(element.childNodes[i],keyword);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Main entry point to start the search
+    function Qbank_Question_HighlightAllOccurencesOfString(keyword)
+    {
+        Qbank_Question_RemoveAllSearchHighlights();
+        Qbank_Question_HighlightAllOccurencesOfStringForElement(document.body, keyword.toLowerCase());
+    }
+    
+    // Helper function-- counts all the occurences of a keyword within an element
+    function Qbank_Question_CountHighlightsForElement(element)
+    {
+        if (element)
+        {
+            if (element.nodeType == 1)
+            {
+                if (element.getAttribute("class") == "Qbank_Question_Search_Highlight")
+                {
+                    Qbank_Question_SearchResultCount++;
+                }
+                else
+                {
+                    for (var i=element.childNodes.length-1; i>=0; i--)
+                    {
+                        Qbank_Question_CountHighlightsForElement(element.childNodes[i]);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Returns a count of the highlights for an elementId
+    function Qbank_Question_CountAllHighlightsForElementId(elementId)
+    {
+        Qbank_Question_SearchResultCount= 0;
+        
+        var element = document.getElementById(elementId);
+        Qbank_Question_CountHighlightsForElement(element);
+    }
+    
+    // Helper function-- Recursively removes the highlights in elements and their childs
+    function Qbank_Question_RemoveAllSearchHighlightsForElement(element)
+    {
+        if (element)
+        {
+            // Verify that it is an element node
+            
+            if (element.nodeType == 1)
+            {
+                if (element.getAttribute("class") == "Qbank_Question_Search_Highlight")
+                {
+                    var text = element.removeChild(element.firstChild);
+                    element.parentNode.insertBefore(text,element);
+                    element.parentNode.removeChild(element);
+                    return true;
+                }
+                else
+                {
+                    var normalize = false;
+                    for (var i=element.childNodes.length-1; i>=0; i--)
+                    {
+                        if (Qbank_Question_RemoveAllSearchHighlightsForElement(element.childNodes[i]))
+                        {
+                            normalize = true;
+                        }
+                    }
+                    if (normalize)
+                    {
+                        element.normalize();
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    // Main function to remove all highlights - in general, should use this function and not the helper function above
+    function Qbank_Question_RemoveAllSearchHighlights()
+    {
+        Qbank_Question_RemoveAllSearchHighlightsForElement(document.body);
+    }
+    
+    </script>
+    
+    <script language="javascript">
+    
+    function get_content(e, bookId){
+        document.location.href = "chapter://" + bookId;
+    }
+    
+    
+    function onBodyLoad() {
+        var objBody = document.getElementsByTagName('body')[0];
+        objBody.addEventListener("touchstart", touchStart, false);
+        objBody.addEventListener("touchend", touchEnd, false);
+        objBody.addEventListener("gestureend", gestureEnd, false);
+        objBody.addEventListener("gesturestart", gestureStart, false);
+        // try this for iOS 3.1.3 -- it doesn't like the CSS
+        document.documentElement.style.webkitTouchCallout = "none";
+    }
+    
+    var disableZoom = false;
+    
+    function getUTDWebURLScheme() {
+        return "uptodatewebaction://";
+    }
+    
+    function getUTDAppURLScheme() {
+        return "uptodateappaction://";
+    }
+    
+    function touchStart(event) {
+        if (event.touches.length > 2) {
+            disableZoom = true;
+        }
+    }
+    
+    function touchEnd(event) {
+        disableZoom = false;
+    }
+    
+    
+    
+    function gestureStart(event) {
+        //    alert("mdown");
+        event.preventDefault();
+    }
+    
+    function gestureEnd(event) {
+        if (!disableZoom) {
+            var uri = null;
+            
+            if (event.scale > 1.0) {
+                uri = getUTDWebURLScheme() + "zoomIn";
+            } else {
+                uri = getUTDWebURLScheme() + "zoomOut";
+            }
+            event.preventDefault();
+            document.location.href = uri;
+        }
+    }
+    
+    function currentWebkitTextSizeAdjust() {
+        var objBody = document.getElementsByTagName('body')[0];
+        var size = objBody.style.webkitTextSizeAdjust;
+        // (unset size is null)
+        if (size == null) {
+            size = 100;
+        }
+        return size;
+    }
+    
+    function setWebkitTextSizeAdjust(percentInt) {
+        var percentString = percentInt + "%";
+        var ojbBody = document.getElementsByTagName('body')[0];
+        ojbBody.style.webkitTextSizeAdjust = percentString;
+        
+        // send this request to hide the HUD (it says resizing text)
+        var uri = getUTDWebURLScheme() + "zoomFinished";
+        //alert(uri);
+        document.location.href = uri;
+        //    alert("hi" + body.style.webkitTextSizeAdjust);
+    }
+    
+    
+    // Use dim/undim with ontouchstart/ontouchend to make HTML elements (ie buttons) reponsive to touches.
+    function dim(element) {
+        element.style.opacity = .5;
+    }
+    
+    function undim(element) {
+        element.style.opacity = 1;
+    }
+    
+    
+    </script>
+
+    
+    
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8"><meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=0'/></head>
+<body class="Normal"><div id="question"><p>An 18-year-old woman is brought to the emergency department due to 3 days of fever, severe headache, nausea, and vomiting.&nbsp; She attends college in North Carolina and has been sexually active with a male partner.&nbsp; Temperature is 39.4 C (102.9 F), blood pressure is 80/55 mm Hg, and pulse is 146/min.&nbsp; The patient is ill-appearing and poorly arousable.&nbsp; The neck is supple, with no jugular venous distension, nuchal rigidity, or lymphadenopathy.&nbsp; Chest examination reveals bilateral rales.&nbsp; A diffuse maculopapular rash with numerous petechiae is seen on the trunk, extremities, hands, and feet.&nbsp; Lumbar puncture reveals the following:</p><table border="0" cellpadding="0" cellspacing="0"><tbody><tr><td colspan="3" style="vertical-align:middle;">Cerebral spinal fluid</td></tr><tr><td style="vertical-align:middle;">&nbsp;&nbsp;&nbsp;&nbsp;Glucose</td><td style="vertical-align:middle;">50 mg/dL</td></tr><tr><td style="vertical-align:middle;">&nbsp;&nbsp;&nbsp;&nbsp;Protein</td><td style="vertical-align:middle;">70 mg/dL</td></tr><tr><td style="vertical-align:middle;">&nbsp;&nbsp;&nbsp;&nbsp;Leukocytes</td><td style="vertical-align:middle;">20/mm<font size="2"><sup>3</sup></font></td></tr><tr><td style="vertical-align:middle;">&nbsp;&nbsp;&nbsp;&nbsp;Red blood cells</td><td style="vertical-align:middle;">0/mm<font size="2"><sup>3</sup></font></td></tr></tbody></table><p>Which of the following organisms is the most likely cause of this patient&#39;s clinical presentation?</p></div><table border="0" cellpadding="2" cellspacing="0" class="AnswerChoiceTable"><tbody><tr><td width="16" id="Qbank-Answer-Row-Image-1"></td><td><input type="radio" name="Qbank-Answer-Button-Group" onclick="answerChanged(1)" ></td><td class="answerOptionNumber"><span>A. </span></td><td><span id="AnswerText1" onclick="answerClickedForStrikeout(1);">Acute HIV infection</span></td></tr><tr><td width="16" id="Qbank-Answer-Row-Image-2"></td><td><input type="radio" name="Qbank-Answer-Button-Group" onclick="answerChanged(2)" ></td><td class="answerOptionNumber"><span>B. </span></td><td><span id="AnswerText2" onclick="answerClickedForStrikeout(2);">Herpes simplex encephalitis virus</span></td></tr><tr><td width="16" id="Qbank-Answer-Row-Image-3"></td><td><input type="radio" name="Qbank-Answer-Button-Group" onclick="answerChanged(3)" ></td><td class="answerOptionNumber"><span>C. </span></td><td><span id="AnswerText3" onclick="answerClickedForStrikeout(3);"><em>Neisseria meningitidis</em></span></td></tr><tr><td width="16" id="Qbank-Answer-Row-Image-4"></td><td><input type="radio" name="Qbank-Answer-Button-Group" onclick="answerChanged(4)" ></td><td class="answerOptionNumber"><span>D. </span></td><td><span id="AnswerText4" onclick="answerClickedForStrikeout(4);"><em>Rickettsia rickettsii</em></span></td></tr></tbody></table></body></html>

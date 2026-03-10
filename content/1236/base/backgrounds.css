@@ -1,0 +1,23 @@
+#pg-signin .signin-bg {
+  background-image: url("/UI/app/images/assets/signin_pattern.jpg");
+}
+
+@media only screen and (-webkit-min-device-pixel-ratio: 2), only screen and (min--moz-device-pixel-ratio: 2), only screen and (-o-min-device-pixel-ratio: 2 / 1), only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi), only screen and (min-resolution: 2dppx) {
+  #pg-signin .signin-bg {
+    background-image: url("/UI/app/images/assets/signin_pattern@2x.jpg");
+  }
+}
+.preview-mode {
+  background-image: url("/UI/app/images/assets/preview_background.png");
+}
+
+#pg-umbrella-index .header-hero {
+  background: url("/UI/app/images/assets/banner.png") repeat-x center center;
+}
+
+@media only screen and (-moz-min-device-pixel-ratio: 1.5), only screen and (-o-min-device-pixel-ratio: 3 / 2), only screen and (-webkit-min-device-pixel-ratio: 1.5), only screen and (min-devicepixel-ratio: 1.5), only screen and (min-resolution: 1.5dppx) {
+  .icon {
+    background-image: url("/UI/app/images/assets/banner@2x.png");
+    background-size: 100px 100px;
+  }
+}

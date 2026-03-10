@@ -1,0 +1,35 @@
+h3.recommended-spectrum a:link{
+	color: #000;
+}
+
+h3.recommended-spectrum{
+	background: #9fc5e8;
+	border: 1px solid #ccc;
+}
+
+h3.active-spectrum a:link{
+	color: #000;
+}
+
+h3.active-spectrum{
+	background: #cfc;
+	border: 1px solid #ccc;
+}
+
+.ui-icon {
+    background-image: url("./ui-icons_222222_256x240.png") !important;
+}
+
+.btn {
+    background-color: rgb(233, 233, 233);
+    padding: 15px;
+    display: inline-block;
+    margin-top: 10px;
+    border-radius: 0.5em;
+    text-decoration: none;
+    border: 1px solid #ccc;
+}
+
+div#activity-spectrum.ui-widget{
+	font-size: 1.0em; /* Make sure that accordion menus have the same font size as surrounding text. */
+}

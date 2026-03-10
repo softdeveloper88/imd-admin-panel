@@ -1,0 +1,27 @@
+/**
+* SG One Theme Styles (ASP Alerts)
+**/
+#content-page-header h5#asp-alert-primary-title {
+    margin: 0px;
+}
+#content-page-header span#asp-alert-secondary-title {
+    font-size: 18px;
+    padding-left: 12pt;
+    padding-bottom: 12px;
+    float: left;
+}
+#content-page-header img#asp-alert-institution-thumbnail {
+    background-clip: padding-box;
+    border: 4px solid #ffffff;
+    border-radius: 4px;
+    width: 97px;
+    height: 48px;
+    margin-right: 15px;
+    float: right;
+}
+
+/* same margin used by for normal content in  body.sg-one-theme #mobile-container-div > span > div */
+.asp-alert-text {
+    margin-left: 12pt;
+    margin-right: 12pt;
+}

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -1237,6 +1238,10 @@ app.get('/dashboard', requireAdmin, (req, res) => {
   renderDashboard(req, res);
 });
 
+app.get('/admin/manage', requireAdmin, (req, res) => {
+  res.render('admin-manage');
+});
+
 app.post('/cleanup-uploads', requireAdmin, (req, res) => {
   let removed = 0;
   if (fs.existsSync(UPLOADS_DIR)) {
@@ -1431,6 +1436,195 @@ app.post('/delete/:name', requireAdmin, (req, res) => {
   if (!path.resolve(pkgDir).startsWith(path.resolve(CONTENT_DIR))) return res.status(400).json({ error: 'Invalid' });
   if (fs.existsSync(pkgDir)) fs.rmSync(pkgDir, { recursive: true });
   res.redirect('/dashboard');
+});
+
+// ----- MySQL User Auth -----
+const mysql = require('mysql2/promise');
+
+const MYSQL_CONFIG = {
+  host: process.env.MYSQL_HOST || '127.0.0.1',
+  port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWORD || '',
+  database: process.env.MYSQL_DATABASE || 'imd_app',
+  waitForConnections: true,
+  connectionLimit: 10,
+  ...(process.env.MYSQL_SOCKET_PATH ? { socketPath: process.env.MYSQL_SOCKET_PATH } : {}),
+};
+
+let mysqlPool = null;
+
+async function getMysqlPool() {
+  if (!mysqlPool) {
+    mysqlPool = mysql.createPool(MYSQL_CONFIG);
+  }
+  return mysqlPool;
+}
+
+function hashUserPassword(password, salt) {
+  if (!salt) salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(String(password), salt, PASSWORD_HASH_ITERATIONS, PASSWORD_HASH_LENGTH, PASSWORD_HASH_DIGEST).toString('hex');
+  return { salt, hash };
+}
+
+function verifyUserPassword(password, salt, hash) {
+  if (!salt || !hash) return false;
+  const computed = crypto.pbkdf2Sync(String(password), salt, PASSWORD_HASH_ITERATIONS, PASSWORD_HASH_LENGTH, PASSWORD_HASH_DIGEST).toString('hex');
+  const a = Buffer.from(computed, 'hex');
+  const b = Buffer.from(String(hash), 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function generateToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Middleware: verify mobile app bearer token
+async function requireAppAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  const token = authHeader.slice(7);
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT s.id AS session_id, s.user_id, s.device_id, u.username, u.subscription_type, u.subscription_expires FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.is_active = 1 AND s.expires_at > NOW()',
+      [token]
+    );
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.appUser = rows[0];
+    next();
+  } catch (err) {
+    console.error('Auth middleware error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// POST /api/auth/login
+app.post('/api/auth/login', express.json(), async (req, res) => {
+  const { username, password, device_id } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  try {
+    const pool = await getMysqlPool();
+    const [users] = await pool.execute('SELECT * FROM users WHERE username = ?', [String(username).trim()]);
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const user = users[0];
+    if (!verifyUserPassword(password, user.password_salt, user.password_hash)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Single-device enforcement: deactivate all existing sessions for this user
+    await pool.execute('UPDATE sessions SET is_active = 0 WHERE user_id = ?', [user.id]);
+
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    await pool.execute(
+      'INSERT INTO sessions (user_id, token, device_id, expires_at, is_active) VALUES (?, ?, ?, ?, 1)',
+      [user.id, token, device_id || null, expiresAt]
+    );
+
+    res.json({
+      token,
+      expires_at: expiresAt.toISOString(),
+      user: {
+        id: user.id,
+        username: user.username,
+        subscription_type: user.subscription_type,
+        subscription_expires: user.subscription_expires,
+      },
+    });
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/logout
+app.post('/api/auth/logout', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('UPDATE sessions SET is_active = 0 WHERE id = ?', [req.appUser.session_id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Logout error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/verify
+app.get('/api/auth/verify', requireAppAuth, (req, res) => {
+  res.json({
+    valid: true,
+    user: {
+      id: req.appUser.user_id,
+      username: req.appUser.username,
+      subscription_type: req.appUser.subscription_type,
+      subscription_expires: req.appUser.subscription_expires,
+    },
+  });
+});
+
+// GET /api/auth/account
+app.get('/api/auth/account', requireAppAuth, (req, res) => {
+  const u = req.appUser;
+  res.json({
+    id: u.user_id,
+    username: u.username,
+    subscription_type: u.subscription_type,
+    subscription_expires: u.subscription_expires,
+    device_id: u.device_id,
+  });
+});
+
+// POST /api/auth/favorites  (add)
+app.post('/api/auth/favorites', requireAppAuth, express.json(), async (req, res) => {
+  const { package_name } = req.body || {};
+  if (!package_name) return res.status(400).json({ error: 'package_name required' });
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'INSERT IGNORE INTO favorites (user_id, package_name) VALUES (?, ?)',
+      [req.appUser.user_id, package_name]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/auth/favorites/:name
+app.delete('/api/auth/favorites/:name', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'DELETE FROM favorites WHERE user_id = ? AND package_name = ?',
+      [req.appUser.user_id, req.params.name]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/favorites
+app.get('/api/auth/favorites', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT package_name, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC',
+      [req.appUser.user_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ----- REST API -----
@@ -1911,11 +2105,538 @@ app.get('/api/packages/:name/bt-html/:filename', (req, res) => {
   res.sendFile(filePath);
 });
 
-app.get('/api/packages/:name/download-db', (req, res) => {
+app.get('/api/packages/:name/download-db', requireAppAuth, async (req, res) => {
   const pkg = getPackageInfo(req.params.name);
   if (!pkg || !pkg.hasDb) return res.status(404).json({ error: 'No database found' });
+
+  // Record the download in MySQL
+  try {
+    const pool = await getMysqlPool();
+    const dbPath = path.join(pkg.path, pkg.dbFile);
+    const stat = fs.statSync(dbPath);
+    await pool.execute(
+      'INSERT INTO user_downloads (user_id, package_name, file_size) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE downloaded_at = NOW(), file_size = ?',
+      [req.appUser.user_id, req.params.name, stat.size, stat.size]
+    );
+    await pool.execute(
+      'INSERT INTO download_stats (package_name, download_count) VALUES (?, 1) ON DUPLICATE KEY UPDATE download_count = download_count + 1, last_downloaded = NOW()',
+      [req.params.name]
+    );
+  } catch (err) {
+    console.error('Download tracking error:', err.message);
+  }
+
   const dbPath = path.join(pkg.path, pkg.dbFile);
   res.download(dbPath, pkg.dbFile);
+});
+
+// ─── App API: User download tracking ───
+
+// GET /api/user/downloads — list all packages the user has downloaded
+app.get('/api/user/downloads', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT package_name, downloaded_at, file_size FROM user_downloads WHERE user_id = ? ORDER BY downloaded_at DESC',
+      [req.appUser.user_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/user/downloads/:name — manually record a download
+app.post('/api/user/downloads/:name', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'INSERT INTO user_downloads (user_id, package_name) VALUES (?, ?) ON DUPLICATE KEY UPDATE downloaded_at = NOW()',
+      [req.appUser.user_id, req.params.name]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── App API: Tab data endpoints ───
+
+// GET /api/tabs/:tabName — get packages for a specific tab (newest, popular, trending, updates, paid)
+app.get('/api/tabs/:tabName', async (req, res) => {
+  const tabName = req.params.tabName.toLowerCase();
+  const validTabs = ['newest', 'popular', 'trending', 'updates', 'paid'];
+  if (!validTabs.includes(tabName)) return res.status(400).json({ error: 'Invalid tab' });
+
+  try {
+    const pool = await getMysqlPool();
+
+    // First check if admin has pinned/curated content for this tab
+    const [pinned] = await pool.execute(
+      'SELECT package_name, sort_order, is_pinned FROM tab_content WHERE tab_name = ? ORDER BY is_pinned DESC, sort_order ASC',
+      [tabName]
+    );
+
+    const allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => rest);
+
+    if (pinned.length > 0) {
+      // Return curated list + remaining packages
+      const pinnedNames = new Set(pinned.map(r => r.package_name));
+      const pinnedPkgs = pinned.map(r => {
+        const pkg = allPackages.find(p => p.name === r.package_name);
+        return pkg ? { ...pkg, _pinned: !!r.is_pinned, _sort: r.sort_order } : null;
+      }).filter(Boolean);
+
+      // Fill remaining slots with auto-sorted packages
+      let remaining = allPackages.filter(p => !pinnedNames.has(p.name));
+
+      if (tabName === 'trending') {
+        const [stats] = await pool.execute('SELECT package_name, download_count FROM download_stats ORDER BY download_count DESC');
+        const countMap = Object.fromEntries(stats.map(s => [s.package_name, s.download_count]));
+        remaining.sort((a, b) => (countMap[b.name] || 0) - (countMap[a.name] || 0));
+      }
+
+      res.json([...pinnedPkgs, ...remaining]);
+      return;
+    }
+
+    // Auto-populate based on tab type
+    switch (tabName) {
+      case 'newest':
+        // Sort by filesystem mtime (newest first)
+        res.json(allPackages.sort((a, b) => (b._mtime || 0) - (a._mtime || 0)));
+        break;
+      case 'popular': {
+        const [stats] = await pool.execute('SELECT package_name, download_count FROM download_stats ORDER BY download_count DESC');
+        const countMap = Object.fromEntries(stats.map(s => [s.package_name, s.download_count]));
+        res.json(allPackages.sort((a, b) => (countMap[b.name] || 0) - (countMap[a.name] || 0)));
+        break;
+      }
+      case 'trending': {
+        // Trending = most downloaded in last 7 days (based on user_downloads)
+        const [recent] = await pool.execute(
+          'SELECT package_name, COUNT(*) AS cnt FROM user_downloads WHERE downloaded_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY package_name ORDER BY cnt DESC'
+        );
+        const trendMap = Object.fromEntries(recent.map(r => [r.package_name, r.cnt]));
+        res.json(allPackages.sort((a, b) => (trendMap[b.name] || 0) - (trendMap[a.name] || 0)));
+        break;
+      }
+      case 'updates':
+        // Packages with most recent changes
+        res.json(allPackages.sort((a, b) => (b._mtime || 0) - (a._mtime || 0)));
+        break;
+      case 'paid': {
+        const [paid] = await pool.execute(
+          'SELECT package_name FROM package_access WHERE min_access_level > 1'
+        );
+        const paidNames = new Set(paid.map(r => r.package_name));
+        res.json(allPackages.filter(p => paidNames.has(p.name)));
+        break;
+      }
+      default:
+        res.json(allPackages);
+    }
+  } catch (err) {
+    console.error('Tab data error:', err.message);
+    // Fallback: return all packages
+    const allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => rest);
+    res.json(allPackages);
+  }
+});
+
+// ─── App API: Categories ───
+
+// GET /api/categories — list all active categories
+app.get('/api/categories', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT id, name, sort_order FROM categories WHERE is_active = 1 ORDER BY sort_order ASC'
+    );
+    res.json(rows);
+  } catch (err) {
+    // Fallback to hardcoded
+    res.json([
+      { name: 'Amedex' }, { name: 'NBME' }, { name: 'OVID Books' },
+      { name: 'Access Medicine' }, { name: 'Sanford' }, { name: 'Elsevier Videos' },
+      { name: 'Elsevier Inc' }, { name: 'PassMedicine' },
+    ]);
+  }
+});
+
+// GET /api/categories/:id/packages — list packages in a category
+app.get('/api/categories/:id/packages', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [mappings] = await pool.execute(
+      'SELECT package_name FROM package_categories WHERE category_id = ?',
+      [req.params.id]
+    );
+    const names = new Set(mappings.map(r => r.package_name));
+    const allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => rest);
+    res.json(allPackages.filter(p => names.has(p.name)));
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Admin API: Helper to log admin actions ───
+async function logAdminAction(adminUsername, action, targetType, targetId, details, ip) {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'INSERT INTO admin_logs (admin_username, action, target_type, target_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
+      [adminUsername, action, targetType, targetId, details, ip]
+    );
+  } catch (err) {
+    console.error('Admin log error:', err.message);
+  }
+}
+
+// ─── Admin API: User Management ───
+
+// GET /api/admin/users — list all users with session info
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [users] = await pool.execute(`
+      SELECT u.id, u.username, u.email, u.subscription_type, u.subscription_expires,
+             u.is_active, u.created_at, u.updated_at,
+             (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.is_active = 1) AS active_sessions,
+             (SELECT s.device_id FROM sessions s WHERE s.user_id = u.id AND s.is_active = 1 ORDER BY s.created_at DESC LIMIT 1) AS last_device,
+             (SELECT COUNT(*) FROM user_downloads d WHERE d.user_id = u.id) AS download_count
+      FROM users u ORDER BY u.created_at DESC
+    `);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/users — create a new user
+app.post('/api/admin/users', requireAdmin, express.json(), async (req, res) => {
+  const { username, password, email, subscription_type, subscription_expires } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  try {
+    const pool = await getMysqlPool();
+    const { salt, hash } = hashUserPassword(password);
+    await pool.execute(
+      'INSERT INTO users (username, email, password_salt, password_hash, subscription_type, subscription_expires) VALUES (?, ?, ?, ?, ?, ?)',
+      [username, email || null, salt, hash, subscription_type || 'free', subscription_expires || null]
+    );
+    await logAdminAction(getAdminSettings().username, 'create_user', 'user', username, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Username already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/users/:id — update user
+app.put('/api/admin/users/:id', requireAdmin, express.json(), async (req, res) => {
+  const { subscription_type, subscription_expires, is_active, password, email } = req.body;
+  try {
+    const pool = await getMysqlPool();
+    const sets = [];
+    const params = [];
+
+    if (subscription_type !== undefined) { sets.push('subscription_type = ?'); params.push(subscription_type); }
+    if (subscription_expires !== undefined) { sets.push('subscription_expires = ?'); params.push(subscription_expires || null); }
+    if (is_active !== undefined) { sets.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+    if (email !== undefined) { sets.push('email = ?'); params.push(email || null); }
+    if (password) {
+      const { salt, hash } = hashUserPassword(password);
+      sets.push('password_salt = ?', 'password_hash = ?');
+      params.push(salt, hash);
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(req.params.id);
+    await pool.execute(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, params);
+    await logAdminAction(getAdminSettings().username, 'update_user', 'user', req.params.id, JSON.stringify(req.body), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/users/:id/force-logout — kill all sessions for a user
+app.post('/api/admin/users/:id/force-logout', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('UPDATE sessions SET is_active = 0 WHERE user_id = ?', [req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'force_logout', 'user', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/users/:id — delete user
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('DELETE FROM users WHERE id = ?', [req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'delete_user', 'user', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin API: Subscription Plans ───
+
+app.get('/api/admin/plans', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT * FROM subscription_plans ORDER BY access_level ASC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/plans', requireAdmin, express.json(), async (req, res) => {
+  const { name, description, duration_days, price, access_level } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'INSERT INTO subscription_plans (name, description, duration_days, price, access_level) VALUES (?, ?, ?, ?, ?)',
+      [name, description || null, duration_days || 30, price || 0, access_level || 1]
+    );
+    await logAdminAction(getAdminSettings().username, 'create_plan', 'subscription', name, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/plans/:id', requireAdmin, express.json(), async (req, res) => {
+  const { name, description, duration_days, price, access_level, is_active } = req.body;
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'UPDATE subscription_plans SET name=COALESCE(?,name), description=COALESCE(?,description), duration_days=COALESCE(?,duration_days), price=COALESCE(?,price), access_level=COALESCE(?,access_level), is_active=COALESCE(?,is_active) WHERE id=?',
+      [name, description, duration_days, price, access_level, is_active, req.params.id]
+    );
+    await logAdminAction(getAdminSettings().username, 'update_plan', 'subscription', req.params.id, JSON.stringify(req.body), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/plans/:id', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('DELETE FROM subscription_plans WHERE id = ?', [req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'delete_plan', 'subscription', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin API: Package Access Control ───
+
+app.get('/api/admin/package-access', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT * FROM package_access ORDER BY package_name');
+    const allPackages = loadDashboardPackages().map(p => p.name);
+    // Merge: show all packages, marking those with custom access rules
+    const accessMap = Object.fromEntries(rows.map(r => [r.package_name, r]));
+    const result = allPackages.map(name => ({
+      name,
+      min_access_level: accessMap[name]?.min_access_level ?? 1,
+      is_visible: accessMap[name]?.is_visible ?? 1,
+    }));
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/package-access/:name', requireAdmin, express.json(), async (req, res) => {
+  const { min_access_level, is_visible } = req.body;
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'INSERT INTO package_access (package_name, min_access_level, is_visible) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE min_access_level = VALUES(min_access_level), is_visible = VALUES(is_visible)',
+      [req.params.name, min_access_level ?? 1, is_visible ?? 1]
+    );
+    await logAdminAction(getAdminSettings().username, 'update_access', 'package', req.params.name, JSON.stringify(req.body), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin API: Tab Content Management ───
+
+app.get('/api/admin/tabs', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT * FROM tab_content ORDER BY tab_name, is_pinned DESC, sort_order ASC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/tabs', requireAdmin, express.json(), async (req, res) => {
+  const { tab_name, package_name, sort_order, is_pinned } = req.body;
+  if (!tab_name || !package_name) return res.status(400).json({ error: 'tab_name and package_name required' });
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'INSERT INTO tab_content (tab_name, package_name, sort_order, is_pinned) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order), is_pinned = VALUES(is_pinned)',
+      [tab_name, package_name, sort_order || 0, is_pinned || 0]
+    );
+    await logAdminAction(getAdminSettings().username, 'update_tab', 'tab', tab_name, JSON.stringify(req.body), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/tabs/:id', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('DELETE FROM tab_content WHERE id = ?', [req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'delete_tab_item', 'tab', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin API: Categories Management ───
+
+app.get('/api/admin/categories', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT * FROM categories ORDER BY sort_order ASC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/categories', requireAdmin, express.json(), async (req, res) => {
+  const { name, sort_order } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('INSERT INTO categories (name, sort_order) VALUES (?, ?)', [name, sort_order || 0]);
+    await logAdminAction(getAdminSettings().username, 'create_category', 'category', name, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/categories/:id', requireAdmin, express.json(), async (req, res) => {
+  const { name, sort_order, is_active } = req.body;
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'UPDATE categories SET name=COALESCE(?,name), sort_order=COALESCE(?,sort_order), is_active=COALESCE(?,is_active) WHERE id=?',
+      [name, sort_order, is_active, req.params.id]
+    );
+    await logAdminAction(getAdminSettings().username, 'update_category', 'category', req.params.id, JSON.stringify(req.body), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/categories/:id', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('DELETE FROM categories WHERE id = ?', [req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'delete_category', 'category', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/categories/:id/packages — assign packages to category
+app.post('/api/admin/categories/:id/packages', requireAdmin, express.json(), async (req, res) => {
+  const { package_names } = req.body; // array of package names
+  if (!Array.isArray(package_names)) return res.status(400).json({ error: 'package_names array required' });
+  try {
+    const pool = await getMysqlPool();
+    // Clear existing and re-insert
+    await pool.execute('DELETE FROM package_categories WHERE category_id = ?', [req.params.id]);
+    for (const name of package_names) {
+      await pool.execute(
+        'INSERT IGNORE INTO package_categories (package_name, category_id) VALUES (?, ?)',
+        [name, req.params.id]
+      );
+    }
+    await logAdminAction(getAdminSettings().username, 'assign_packages', 'category', req.params.id, JSON.stringify(package_names), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin API: Analytics Dashboard ───
+
+app.get('/api/admin/analytics', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [[{ total_users }]] = await pool.execute('SELECT COUNT(*) AS total_users FROM users');
+    const [[{ active_users }]] = await pool.execute('SELECT COUNT(*) AS active_users FROM users WHERE is_active = 1');
+    const [[{ total_downloads }]] = await pool.execute('SELECT COALESCE(SUM(download_count), 0) AS total_downloads FROM download_stats');
+    const [[{ active_sessions }]] = await pool.execute('SELECT COUNT(*) AS active_sessions FROM sessions WHERE is_active = 1 AND expires_at > NOW()');
+
+    const [subCounts] = await pool.execute(
+      'SELECT subscription_type, COUNT(*) AS count FROM users GROUP BY subscription_type'
+    );
+    const [topDownloads] = await pool.execute(
+      'SELECT package_name, download_count FROM download_stats ORDER BY download_count DESC LIMIT 10'
+    );
+    const [recentActivity] = await pool.execute(
+      'SELECT action, target_type, target_id, admin_username, created_at FROM admin_logs ORDER BY created_at DESC LIMIT 20'
+    );
+    const [recentDownloads] = await pool.execute(
+      'SELECT u.username, d.package_name, d.downloaded_at FROM user_downloads d JOIN users u ON d.user_id = u.id ORDER BY d.downloaded_at DESC LIMIT 20'
+    );
+
+    res.json({
+      total_users,
+      active_users,
+      total_downloads,
+      active_sessions,
+      subscription_counts: subCounts,
+      top_downloads: topDownloads,
+      recent_activity: recentActivity,
+      recent_downloads: recentDownloads,
+      total_packages: loadDashboardPackages().length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin API: Logs ───
+
+app.get('/api/admin/logs', requireAdmin, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM admin_logs ORDER BY created_at DESC LIMIT ?',
+      [limit]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 async function start() {

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Subscriptions – iMD Admin</title>
+  <style>
+    :root {
+      --bg: #f4efe7; --panel: rgba(255,251,245,0.9); --panel-strong: #fffdf8;
+      --ink: #1d2a2f; --muted: #66757e; --line: rgba(35,50,58,0.12);
+      --brand: #0f766e; --brand-deep: #0b4f49;
+      --danger: #b42318; --danger-bg: #fff0ed;
+      --success: #0f7b4d; --success-bg: #edf9f0;
+      --warn: #b45309; --warn-bg: #fffbeb;
+      --shadow: 0 22px 50px rgba(31,38,43,0.12); --radius: 22px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Avenir Next","Helvetica Neue","Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(15,118,110,0.14),transparent 26%),radial-gradient(circle at top right,rgba(217,119,6,0.12),transparent 20%),linear-gradient(180deg,#f8f2e8 0%,var(--bg) 100%);min-height:100vh;display:flex}
+    a{color:inherit}
+    .sidebar{width:250px;min-height:100vh;background:linear-gradient(180deg,rgba(12,58,69,0.97),rgba(22,90,84,0.93));color:#f9fafb;padding:0;flex-shrink:0;position:fixed;left:0;top:0;bottom:0;z-index:100;transition:transform .2s}
+    .sidebar-header{padding:20px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1)}
+    .logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}
+    .logo-icon{font-size:24px}
+    .sidebar-toggle{background:none;border:none;color:#f9fafb;font-size:20px;cursor:pointer;padding:4px 8px}
+    .sidebar-menu{padding:12px 0}
+    .menu-section{margin-bottom:8px}
+    .menu-label{padding:8px 20px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.5}
+    .menu-item{display:flex;align-items:center;gap:10px;padding:10px 20px;text-decoration:none;color:rgba(255,255,255,.7);font-size:14px;transition:all .15s}
+    .menu-item:hover{background:rgba(255,255,255,.08);color:#fff}
+    .menu-item.active{background:rgba(255,255,255,.12);color:#fff;border-left:3px solid #5eead4}
+    .menu-icon{font-size:16px;width:22px;text-align:center}
+    .main-content{margin-left:250px;flex:1;min-width:0}
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;background:var(--panel);border-bottom:1px solid var(--line)}
+    .topbar-left{display:flex;align-items:center;gap:12px}
+    .topbar-right{display:flex;align-items:center;gap:16px}
+    .breadcrumbs{font-size:14px;color:var(--muted)}
+    .breadcrumbs a{color:var(--brand);text-decoration:none}
+    .mobile-toggle{display:none;background:none;border:none;font-size:20px;cursor:pointer}
+    .btn-logout-sm{background:none;border:1px solid var(--line);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted)}
+    .admin-name{font-size:13px;color:var(--muted)}
+    .notif-bell{cursor:pointer;font-size:18px;position:relative}
+    .notif-count{position:absolute;top:-6px;right:-8px;background:var(--danger);color:#fff;font-size:10px;padding:1px 5px;border-radius:99px}
+    .notif-dropdown{position:absolute;right:80px;top:52px;width:340px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:200;max-height:400px;overflow:auto}
+    .notif-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .notif-mark-all{background:none;border:none;color:var(--brand);cursor:pointer;font-size:12px}
+    .notif-item{padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer}
+    .notif-item.unread{background:#f0fdf4}
+    .notif-title{font-size:13px;font-weight:600}
+    .notif-msg{font-size:12px;color:var(--muted);margin-top:2px}
+    .notif-time{font-size:11px;color:var(--muted);margin-top:4px}
+    .page-content{padding:28px}
+    .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px}
+    .page-title{font-size:28px;font-weight:700;letter-spacing:-0.02em;margin:0}
+    .page-subtitle{color:var(--muted);font-size:14px;margin:4px 0 0}
+    .stat-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:24px}
+    .stat-card{background:var(--panel);border:1px solid rgba(255,255,255,0.7);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+    .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+    .stat-value{font-size:36px;font-weight:700;margin:8px 0 4px;font-family:Georgia,serif}
+    .stat-value.money{color:var(--success)}
+    .stat-note{font-size:12px;color:var(--muted)}
+    .card{background:var(--panel);border:1px solid rgba(255,255,255,0.7);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px}
+    .card-header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+    .card-body{padding:20px 24px}
+    .card-title{font-size:18px;font-weight:700;margin:0}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    table{width:100%;border-collapse:collapse}
+    thead th{padding:12px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border-bottom:2px solid var(--line);font-weight:600}
+    tbody td{padding:14px 16px;border-bottom:1px solid rgba(29,42,47,0.06);font-size:14px;vertical-align:middle}
+    tbody tr:hover td{background:rgba(255,255,255,0.5)}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    .badge-free{background:#f0f4f8;color:#4a5568}
+    .badge-basic{background:#e0f2fe;color:#0369a1}
+    .badge-premium{background:#fef3c7;color:#b45309}
+    .badge-active{background:var(--success-bg);color:var(--success)}
+    .badge-expired{background:var(--danger-bg);color:var(--danger)}
+    .badge-cancelled{background:#fef3c7;color:var(--warn)}
+    .badge-completed{background:var(--success-bg);color:var(--success)}
+    .badge-refunded{background:var(--danger-bg);color:var(--danger)}
+    .badge-pending{background:#fef3c7;color:var(--warn)}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn-primary{background:var(--brand);color:#fff}
+    .btn-primary:hover{background:var(--brand-deep)}
+    .btn-secondary{background:#f0f4f8;color:var(--ink);border:1px solid var(--line)}
+    .btn-danger{background:var(--danger-bg);color:var(--danger)}
+    .btn-sm{padding:5px 10px;font-size:12px}
+    .btn-group{display:flex;gap:6px}
+    .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--line);padding-bottom:0}
+    .tab-btn{padding:10px 18px;border:none;background:none;font-size:14px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+    .tab-btn.active{color:var(--brand);border-bottom-color:var(--brand)}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+    .toast{position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:12px;color:#fff;font-size:14px;font-weight:500;z-index:999;animation:slideUp .3s ease}
+    .toast-success{background:var(--success)}
+    .toast-error{background:var(--danger)}
+    @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .empty-state{text-align:center;padding:40px;color:var(--muted)}
+    .plan-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;text-align:center}
+    .plan-name{font-size:20px;font-weight:700;margin:0 0 4px}
+    .plan-price{font-size:32px;font-weight:700;color:var(--brand);font-family:Georgia,serif}
+    .plan-duration{font-size:13px;color:var(--muted)}
+    .plan-features{text-align:left;margin:16px 0;font-size:13px;line-height:2}
+    .plan-meta{font-size:12px;color:var(--muted);margin-top:12px}
+    .modal-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:500;align-items:center;justify-content:center}
+    .modal-mask.open{display:flex}
+    .modal-box{background:#fff;border-radius:18px;box-shadow:0 40px 80px rgba(0,0,0,0.2);width:520px;max-width:95vw;max-height:90vh;overflow-y:auto}
+    .modal-header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+    .modal-header h3{margin:0;font-size:18px}
+    .modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)}
+    .modal-body{padding:20px 24px}
+    .modal-footer{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink)}
+    .form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none}
+    .form-group input:focus,.form-group select:focus{border-color:var(--brand)}
+    @media(max-width:900px){
+      .sidebar{transform:translateX(-250px)}.main-content{margin-left:0}.sidebar.show{transform:translateX(0)}.mobile-toggle{display:block}
+      .stat-cards{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <%- include('partials/sidebar', { activePage: 'subscriptions' }) %>
+  <div class="main-content">
+    <%- include('partials/header', { breadcrumb: 'Subscriptions', currentAdminUser: typeof currentAdminUser !== 'undefined' ? currentAdminUser : 'Admin' }) %>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Subscriptions & Revenue</h1>
+          <p class="page-subtitle">Manage plans, view payments, and track revenue</p>
+        </div>
+      </div>
+
+      <div class="stat-cards">
+        <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value money" id="sTotalRev">$–</div></div>
+        <div class="stat-card"><div class="stat-label">Monthly Revenue</div><div class="stat-value money" id="sMonthlyRev">$–</div></div>
+        <div class="stat-card"><div class="stat-label">Paid Subscribers</div><div class="stat-value" id="sPaidSubs">–</div></div>
+        <div class="stat-card"><div class="stat-label">Active Plans</div><div class="stat-value" id="sPlans">–</div></div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="plans" onclick="switchTab('plans')">Plans</button>
+        <button class="tab-btn" data-tab="subscribers" onclick="switchTab('subscribers')">Subscribers</button>
+        <button class="tab-btn" data-tab="payments" onclick="switchTab('payments')">Payments</button>
+        <button class="tab-btn" data-tab="revenue" onclick="switchTab('revenue')">Revenue</button>
+      </div>
+
+      <!-- Plans Tab -->
+      <div class="tab-panel active" id="tab-plans">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Subscription Plans</h2>
+            <button class="btn btn-primary" onclick="openPlanModal()">+ Add Plan</button>
+          </div>
+          <div class="card-body" id="plansList">
+            <p class="empty-state">Loading plans...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subscribers Tab -->
+      <div class="tab-panel" id="tab-subscribers">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Paid Subscribers</h2>
+          </div>
+          <div class="card-body" style="padding:0;overflow-x:auto">
+            <table>
+              <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Expires</th><th>Auto-Renew</th><th>Actions</th></tr></thead>
+              <tbody id="subsBody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payments Tab -->
+      <div class="tab-panel" id="tab-payments">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Payment History</h2>
+          </div>
+          <div class="card-body" style="padding:0;overflow-x:auto">
+            <table>
+              <thead><tr><th>ID</th><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+              <tbody id="paymentsBody"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Revenue Tab -->
+      <div class="tab-panel" id="tab-revenue">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">Revenue by Month</h2></div>
+          <div class="card-body">
+            <table>
+              <thead><tr><th>Month</th><th>Revenue</th></tr></thead>
+              <tbody id="revenueBody"><tr><td colspan="2" class="empty-state">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">Revenue by Plan</h2></div>
+          <div class="card-body">
+            <table>
+              <thead><tr><th>Plan</th><th>Subscriptions</th><th>Revenue</th></tr></thead>
+              <tbody id="revByPlanBody"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plan Modal -->
+  <div class="modal-mask" id="planModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="planModalTitle">Add Plan</h3>
+        <button class="modal-close" onclick="closePlanModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editPlanId">
+        <div class="form-group"><label>Plan Name</label><input type="text" id="pName" placeholder="Premium Monthly"></div>
+        <div class="form-group"><label>Description</label><textarea id="pDesc" rows="2" placeholder="Full access to all content"></textarea></div>
+        <div class="form-group"><label>Price ($)</label><input type="number" id="pPrice" step="0.01" placeholder="9.99"></div>
+        <div class="form-group"><label>Duration (days)</label><input type="number" id="pDuration" placeholder="30"></div>
+        <div class="form-group"><label>Access Level</label>
+          <select id="pLevel"><option value="1">1 – Basic</option><option value="2">2 – Standard</option><option value="3">3 – Premium</option></select>
+        </div>
+        <div class="form-group"><label>Stripe Price ID (optional)</label><input type="text" id="pStripeId" placeholder="price_..."></div>
+        <div class="form-group"><label>Features (one per line)</label><textarea id="pFeatures" rows="4" placeholder="Access to all content&#10;Priority support"></textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closePlanModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="savePlan()">Save</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const stripeKey = '<%= typeof stripeKey !== "undefined" ? stripeKey : "" %>';
+let allPlans = [], allSubs = [], revenueData = {};
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}) : '—'; }
+function fmtMoney(n) { return '$' + (parseFloat(n)||0).toFixed(2); }
+function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+function toggleSidebar(){document.body.classList.toggle('collapsed');const sb=document.querySelector('.sidebar');sb&&sb.classList.toggle('show')}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+}
+
+async function loadAll() {
+  try {
+    const [plansResp, subsResp, revResp] = await Promise.all([
+      fetch('/api/admin/plans'), fetch('/api/admin/subscriptions'), fetch('/api/admin/revenue')
+    ]);
+    allPlans = await plansResp.json();
+    allSubs = await subsResp.json();
+    revenueData = await revResp.json();
+
+    document.getElementById('sTotalRev').textContent = fmtMoney(revenueData.total_revenue);
+    document.getElementById('sMonthlyRev').textContent = fmtMoney(revenueData.monthly_revenue);
+    document.getElementById('sPaidSubs').textContent = allSubs.length;
+    document.getElementById('sPlans').textContent = allPlans.length;
+
+    renderPlans();
+    renderSubs();
+    renderPayments();
+    renderRevenue();
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderPlans() {
+  const el = document.getElementById('plansList');
+  if (!allPlans.length) { el.innerHTML = '<p class="empty-state">No plans configured</p>'; return; }
+  el.innerHTML = '<div class="grid-2">' + allPlans.map(p => {
+    const features = p.features ? (typeof p.features === 'string' ? JSON.parse(p.features) : p.features) : [];
+    return '<div class="plan-card">' +
+      '<div class="plan-name">' + esc(p.name) + '</div>' +
+      '<div class="plan-price">' + fmtMoney(p.price) + '</div>' +
+      '<div class="plan-duration">' + p.duration_days + ' days · Level ' + p.access_level + '</div>' +
+      (features.length ? '<div class="plan-features">' + features.map(f => '✓ ' + esc(f)).join('<br>') + '</div>' : '') +
+      (p.stripe_price_id ? '<div class="plan-meta">Stripe: ' + esc(p.stripe_price_id) + '</div>' : '') +
+      '<div style="margin-top:12px"><button class="btn btn-secondary btn-sm" onclick="editPlan(' + p.id + ')">Edit</button> ' +
+      '<button class="btn btn-danger btn-sm" onclick="deletePlan(' + p.id + ')">Delete</button></div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+function renderSubs() {
+  const tb = document.getElementById('subsBody');
+  if (!allSubs.length) { tb.innerHTML = '<tr><td colspan="6" class="empty-state">No paid subscribers</td></tr>'; return; }
+  tb.innerHTML = allSubs.map(s => {
+    const statusBadge = s.subscription_status === 'active' ? 'badge-active' : s.subscription_status === 'expired' ? 'badge-expired' : 'badge-cancelled';
+    return '<tr>' +
+      '<td>' + esc(s.full_name || s.username) + '<br><small style="color:var(--muted)">' + esc(s.email||'') + '</small></td>' +
+      '<td><span class="badge badge-premium">' + esc(s.subscription_type) + '</span></td>' +
+      '<td><span class="badge ' + statusBadge + '">' + esc(s.subscription_status||'active') + '</span></td>' +
+      '<td>' + fmtDate(s.subscription_expires) + '</td>' +
+      '<td>' + (s.auto_renew ? '✓ Yes' : '✗ No') + '</td>' +
+      '<td><button class="btn btn-secondary btn-sm" onclick="extendSub(' + s.id + ')">Extend</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderPayments() {
+  // Payments are part of revenue data or we can load from separate endpoint
+  // For now show revenue-by-month as payment summary
+  const tb = document.getElementById('paymentsBody');
+  tb.innerHTML = '<tr><td colspan="7" class="empty-state">Payment history is available per-subscriber. Select a subscriber to view details.</td></tr>';
+}
+
+function renderRevenue() {
+  const mb = document.getElementById('revenueBody');
+  if (revenueData.revenue_by_month && revenueData.revenue_by_month.length) {
+    mb.innerHTML = revenueData.revenue_by_month.map(r =>
+      '<tr><td>' + esc(r.month) + '</td><td style="font-weight:700;color:var(--success)">' + fmtMoney(r.revenue) + '</td></tr>'
+    ).join('');
+  } else {
+    mb.innerHTML = '<tr><td colspan="2" class="empty-state">No revenue data yet</td></tr>';
+  }
+
+  const pb = document.getElementById('revByPlanBody');
+  if (revenueData.revenue_by_plan && revenueData.revenue_by_plan.length) {
+    pb.innerHTML = revenueData.revenue_by_plan.map(r =>
+      '<tr><td>' + esc(r.name) + '</td><td>' + r.count + '</td><td style="font-weight:700;color:var(--success)">' + fmtMoney(r.revenue) + '</td></tr>'
+    ).join('');
+  } else {
+    pb.innerHTML = '<tr><td colspan="3" class="empty-state">No plan revenue data yet</td></tr>';
+  }
+}
+
+function openPlanModal() {
+  document.getElementById('planModalTitle').textContent = 'Add Plan';
+  document.getElementById('editPlanId').value = '';
+  document.getElementById('pName').value = '';
+  document.getElementById('pDesc').value = '';
+  document.getElementById('pPrice').value = '';
+  document.getElementById('pDuration').value = '';
+  document.getElementById('pLevel').value = '1';
+  document.getElementById('pStripeId').value = '';
+  document.getElementById('pFeatures').value = '';
+  document.getElementById('planModal').classList.add('open');
+}
+
+function editPlan(id) {
+  const p = allPlans.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('planModalTitle').textContent = 'Edit Plan';
+  document.getElementById('editPlanId').value = p.id;
+  document.getElementById('pName').value = p.name || '';
+  document.getElementById('pDesc').value = p.description || '';
+  document.getElementById('pPrice').value = p.price || '';
+  document.getElementById('pDuration').value = p.duration_days || '';
+  document.getElementById('pLevel').value = p.access_level || 1;
+  document.getElementById('pStripeId').value = p.stripe_price_id || '';
+  const features = p.features ? (typeof p.features === 'string' ? JSON.parse(p.features) : p.features) : [];
+  document.getElementById('pFeatures').value = features.join('\n');
+  document.getElementById('planModal').classList.add('open');
+}
+
+function closePlanModal() {
+  document.getElementById('planModal').classList.remove('open');
+}
+
+async function savePlan() {
+  const id = document.getElementById('editPlanId').value;
+  const features = document.getElementById('pFeatures').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const data = {
+    name: document.getElementById('pName').value,
+    description: document.getElementById('pDesc').value,
+    price: parseFloat(document.getElementById('pPrice').value) || 0,
+    duration_days: parseInt(document.getElementById('pDuration').value) || 30,
+    access_level: parseInt(document.getElementById('pLevel').value) || 1,
+    stripe_price_id: document.getElementById('pStripeId').value || null,
+    features: JSON.stringify(features),
+    is_active: 1
+  };
+  const url = id ? '/api/admin/plans/' + id : '/api/admin/plans';
+  const method = id ? 'PUT' : 'POST';
+  try {
+    const resp = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Failed'); }
+    toast(id ? 'Plan updated' : 'Plan created', 'success');
+    closePlanModal();
+    loadAll();
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function deletePlan(id) {
+  if (!confirm('Delete this plan?')) return;
+  try {
+    const resp = await fetch('/api/admin/plans/' + id, { method: 'DELETE' });
+    if (!resp.ok) throw new Error('Failed');
+    toast('Plan deleted', 'success');
+    loadAll();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function extendSub(userId) {
+  const days = prompt('Extend subscription by how many days?', '30');
+  if (!days) return;
+  try {
+    const resp = await fetch('/api/admin/extend-subscription/' + userId, {
+      method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ days: parseInt(days) })
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || 'Failed');
+    toast('Extended to ' + result.new_expiry, 'success');
+    loadAll();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+loadAll();
+</script>
+</body>
+</html>

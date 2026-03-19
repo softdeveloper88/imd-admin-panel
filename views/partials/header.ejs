@@ -1,0 +1,75 @@
+<header class="topbar">
+  <div class="topbar-left">
+    <button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="breadcrumbs">
+      <a href="/dashboard">Admin</a>
+      <% if (typeof breadcrumb !== 'undefined' && breadcrumb) { %>
+        <span>›</span> <span><%= breadcrumb %></span>
+      <% } %>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="notif-bell" id="notifBell" onclick="toggleNotifications()">
+      🔔 <span class="notif-count" id="notifCount" style="display:none">0</span>
+    </div>
+    <div class="admin-name"><%= typeof currentAdminUser !== 'undefined' ? currentAdminUser : 'Admin' %></div>
+    <form method="POST" action="/logout" style="display:inline">
+      <button type="submit" class="btn-logout-sm">Logout</button>
+    </form>
+  </div>
+</header>
+<!-- Notification dropdown -->
+<div class="notif-dropdown" id="notifDropdown" style="display:none">
+  <div class="notif-header">
+    <strong>Notifications</strong>
+    <button onclick="markAllRead()" class="notif-mark-all">Mark all read</button>
+  </div>
+  <div class="notif-list" id="notifList">
+    <p style="padding:16px;color:#718096;font-size:13px;text-align:center">Loading...</p>
+  </div>
+</div>
+<script>
+(function() {
+  async function loadNotifications() {
+    try {
+      const resp = await fetch('/api/admin/notifications');
+      const data = await resp.json();
+      const countEl = document.getElementById('notifCount');
+      if (data.unread > 0) { countEl.textContent = data.unread; countEl.style.display = ''; }
+      else { countEl.style.display = 'none'; }
+      const list = document.getElementById('notifList');
+      if (data.notifications.length === 0) {
+        list.innerHTML = '<p style="padding:16px;color:#718096;font-size:13px;text-align:center">No notifications</p>';
+        return;
+      }
+      list.innerHTML = data.notifications.slice(0, 10).map(n =>
+        '<div class="notif-item ' + (n.is_read ? '' : 'unread') + '" onclick="markRead(' + n.id + ')">' +
+        '<div class="notif-title">' + (n.title || '') + '</div>' +
+        '<div class="notif-msg">' + (n.message || '') + '</div>' +
+        '<div class="notif-time">' + new Date(n.created_at).toLocaleString() + '</div>' +
+        '</div>'
+      ).join('');
+    } catch {}
+  }
+  loadNotifications();
+  setInterval(loadNotifications, 60000);
+  window._loadNotifications = loadNotifications;
+})();
+function toggleNotifications() {
+  const dd = document.getElementById('notifDropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+async function markRead(id) {
+  await fetch('/api/admin/notifications/' + id + '/read', { method: 'PUT' });
+  window._loadNotifications();
+}
+async function markAllRead() {
+  await fetch('/api/admin/notifications/read-all', { method: 'PUT' });
+  window._loadNotifications();
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#notifBell') && !e.target.closest('#notifDropdown')) {
+    document.getElementById('notifDropdown').style.display = 'none';
+  }
+});
+</script>

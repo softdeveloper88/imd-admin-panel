@@ -1,0 +1,44 @@
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <span class="logo-icon">⚕</span>
+      <span class="logo-text">iMD Admin</span>
+    </div>
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+  </div>
+  <div class="sidebar-menu">
+    <div class="menu-section">
+      <div class="menu-label">Main</div>
+      <a href="/dashboard" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'dashboard' ? 'active' : '' %>">
+        <span class="menu-icon">📊</span><span class="menu-text">Dashboard</span>
+      </a>
+    </div>
+    <div class="menu-section">
+      <div class="menu-label">Management</div>
+      <a href="/admin/content" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'content' ? 'active' : '' %>">
+        <span class="menu-icon">📦</span><span class="menu-text">Content</span>
+      </a>
+      <a href="/admin/users" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'users' ? 'active' : '' %>">
+        <span class="menu-icon">👥</span><span class="menu-text">Users</span>
+      </a>
+      <a href="/admin/subscriptions" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'subscriptions' ? 'active' : '' %>">
+        <span class="menu-icon">💳</span><span class="menu-text">Subscriptions</span>
+      </a>
+    </div>
+    <div class="menu-section">
+      <div class="menu-label">Insights</div>
+      <a href="/admin/analytics" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'analytics' ? 'active' : '' %>">
+        <span class="menu-icon">📈</span><span class="menu-text">Analytics</span>
+      </a>
+    </div>
+    <div class="menu-section">
+      <div class="menu-label">System</div>
+      <a href="/admin/settings" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'settings' ? 'active' : '' %>">
+        <span class="menu-icon">⚙️</span><span class="menu-text">Settings</span>
+      </a>
+      <a href="/admin/manage" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'manage' ? 'active' : '' %>">
+        <span class="menu-icon">🔧</span><span class="menu-text">Legacy Panel</span>
+      </a>
+    </div>
+  </div>
+</nav>

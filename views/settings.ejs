@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings – iMD Admin</title>
+  <style>
+    :root {
+      --bg: #f4efe7; --panel: rgba(255,251,245,0.9); --panel-strong: #fffdf8;
+      --ink: #1d2a2f; --muted: #66757e; --line: rgba(35,50,58,0.12);
+      --brand: #0f766e; --brand-deep: #0b4f49;
+      --danger: #b42318; --danger-bg: #fff0ed;
+      --success: #0f7b4d; --success-bg: #edf9f0;
+      --shadow: 0 22px 50px rgba(31,38,43,0.12); --radius: 22px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Avenir Next","Helvetica Neue","Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(15,118,110,0.14),transparent 26%),radial-gradient(circle at top right,rgba(217,119,6,0.12),transparent 20%),linear-gradient(180deg,#f8f2e8 0%,var(--bg) 100%);min-height:100vh;display:flex}
+    a{color:inherit}
+    .sidebar{width:250px;min-height:100vh;background:linear-gradient(180deg,rgba(12,58,69,0.97),rgba(22,90,84,0.93));color:#f9fafb;padding:0;flex-shrink:0;position:fixed;left:0;top:0;bottom:0;z-index:100;transition:transform .2s}
+    .sidebar-header{padding:20px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1)}
+    .logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}
+    .logo-icon{font-size:24px}
+    .sidebar-toggle{background:none;border:none;color:#f9fafb;font-size:20px;cursor:pointer;padding:4px 8px}
+    .sidebar-menu{padding:12px 0}
+    .menu-section{margin-bottom:8px}
+    .menu-label{padding:8px 20px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.5}
+    .menu-item{display:flex;align-items:center;gap:10px;padding:10px 20px;text-decoration:none;color:rgba(255,255,255,.7);font-size:14px;transition:all .15s}
+    .menu-item:hover{background:rgba(255,255,255,.08);color:#fff}
+    .menu-item.active{background:rgba(255,255,255,.12);color:#fff;border-left:3px solid #5eead4}
+    .menu-icon{font-size:16px;width:22px;text-align:center}
+    .main-content{margin-left:250px;flex:1;min-width:0}
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;background:var(--panel);border-bottom:1px solid var(--line)}
+    .topbar-left{display:flex;align-items:center;gap:12px}
+    .topbar-right{display:flex;align-items:center;gap:16px}
+    .breadcrumbs{font-size:14px;color:var(--muted)}
+    .breadcrumbs a{color:var(--brand);text-decoration:none}
+    .mobile-toggle{display:none;background:none;border:none;font-size:20px;cursor:pointer}
+    .btn-logout-sm{background:none;border:1px solid var(--line);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted)}
+    .admin-name{font-size:13px;color:var(--muted)}
+    .notif-bell{cursor:pointer;font-size:18px;position:relative}
+    .notif-count{position:absolute;top:-6px;right:-8px;background:var(--danger);color:#fff;font-size:10px;padding:1px 5px;border-radius:99px}
+    .notif-dropdown{position:absolute;right:80px;top:52px;width:340px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:200;max-height:400px;overflow:auto}
+    .notif-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .notif-mark-all{background:none;border:none;color:var(--brand);cursor:pointer;font-size:12px}
+    .notif-item{padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer}
+    .notif-item.unread{background:#f0fdf4}
+    .notif-title{font-size:13px;font-weight:600}
+    .notif-msg{font-size:12px;color:var(--muted);margin-top:2px}
+    .notif-time{font-size:11px;color:var(--muted);margin-top:4px}
+    .page-content{padding:28px}
+    .page-header{margin-bottom:24px}
+    .page-title{font-size:28px;font-weight:700;letter-spacing:-0.02em;margin:0}
+    .page-subtitle{color:var(--muted);font-size:14px;margin:4px 0 0}
+    .card{background:var(--panel);border:1px solid rgba(255,255,255,0.7);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px}
+    .card-header{padding:20px 24px;border-bottom:1px solid var(--line)}
+    .card-body{padding:20px 24px}
+    .card-title{font-size:18px;font-weight:700;margin:0}
+    .card-desc{font-size:13px;color:var(--muted);margin:4px 0 0}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    .form-group{margin-bottom:20px}
+    .form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink)}
+    .form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none;background:#fff}
+    .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--brand)}
+    .form-help{font-size:12px;color:var(--muted);margin-top:4px}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn-primary{background:var(--brand);color:#fff}
+    .btn-primary:hover{background:var(--brand-deep)}
+    .btn-secondary{background:#f0f4f8;color:var(--ink);border:1px solid var(--line)}
+    .btn-danger{background:var(--danger-bg);color:var(--danger)}
+    .btn-danger:hover{background:#fdd;color:#991b1b}
+    .toggle-switch{display:flex;align-items:center;gap:12px}
+    .toggle-track{width:44px;height:24px;border-radius:12px;background:#cbd5e1;position:relative;cursor:pointer;transition:background .2s}
+    .toggle-track.on{background:var(--brand)}
+    .toggle-knob{width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+    .toggle-track.on .toggle-knob{left:22px}
+    .toggle-label{font-size:14px}
+    .divider{height:1px;background:var(--line);margin:24px 0}
+    .toast{position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:12px;color:#fff;font-size:14px;font-weight:500;z-index:999;animation:slideUp .3s ease}
+    .toast-success{background:var(--success)}
+    .toast-error{background:var(--danger)}
+    @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .stripe-info{display:flex;align-items:center;gap:12px;padding:14px 18px;background:#f8f4ff;border:1px solid #e9d5ff;border-radius:12px;font-size:13px;margin-bottom:20px}
+    .stripe-info .stripe-logo{font-size:20px}
+    @media(max-width:900px){
+      .sidebar{transform:translateX(-250px)}.main-content{margin-left:0}.sidebar.show{transform:translateX(0)}.mobile-toggle{display:block}
+      .grid-2{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <%- include('partials/sidebar', { activePage: 'settings' }) %>
+  <div class="main-content">
+    <%- include('partials/header', { breadcrumb: 'Settings', currentAdminUser: typeof currentAdminUser !== 'undefined' ? currentAdminUser : 'Admin' }) %>
+    <div class="page-content">
+      <div class="page-header">
+        <h1 class="page-title">Settings</h1>
+        <p class="page-subtitle">Configure application behavior, payment integration, and admin preferences</p>
+      </div>
+
+      <!-- App Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Application Settings</h2>
+          <p class="card-desc">General settings for the iMD application</p>
+        </div>
+        <div class="card-body">
+          <div class="grid-2">
+            <div class="form-group">
+              <label>App Name</label>
+              <input type="text" id="sAppName" placeholder="iMD">
+              <p class="form-help">Display name shown in the app</p>
+            </div>
+            <div class="form-group">
+              <label>Support Email</label>
+              <input type="email" id="sSupportEmail" placeholder="support@example.com">
+              <p class="form-help">Contact email shown to users</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Minimum App Version</label>
+              <input type="text" id="sMinVersion" placeholder="1.0.0">
+              <p class="form-help">Users with older versions will be prompted to update</p>
+            </div>
+            <div class="form-group">
+              <label>Maintenance Mode</label>
+              <div class="toggle-switch">
+                <div class="toggle-track" id="toggleMaintenance" onclick="toggleSwitch('maintenance')">
+                  <div class="toggle-knob"></div>
+                </div>
+                <span class="toggle-label">Enable maintenance mode</span>
+              </div>
+              <p class="form-help">When enabled, the app shows a maintenance message</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Maintenance Message</label>
+            <textarea id="sMaintenanceMsg" rows="2" placeholder="We're performing scheduled maintenance. Please check back later."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="saveAppSettings()">Save App Settings</button>
+        </div>
+      </div>
+
+      <!-- Stripe Settings -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Payment Integration</h2>
+          <p class="card-desc">Stripe payment configuration</p>
+        </div>
+        <div class="card-body">
+          <div class="stripe-info">
+            <span class="stripe-logo">💳</span>
+            <div>
+              <strong>Stripe Integration</strong><br>
+              <% if (stripeKey) { %>
+                Publishable key is configured. Manage secret keys in your <code>.env</code> file.
+              <% } else { %>
+                No Stripe publishable key configured. Add <code>STRIPE_PUBLISHABLE_KEY</code> to your <code>.env</code> file.
+              <% } %>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Default Currency</label>
+              <select id="sCurrency">
+                <option value="usd">USD ($)</option>
+                <option value="eur">EUR (€)</option>
+                <option value="gbp">GBP (£)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Free Trial Days</label>
+              <input type="number" id="sTrialDays" min="0" placeholder="0">
+              <p class="form-help">Number of free trial days for new subscribers</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Auto-Renewal Default</label>
+            <div class="toggle-switch">
+              <div class="toggle-track" id="toggleAutoRenew" onclick="toggleSwitch('auto_renew')">
+                <div class="toggle-knob"></div>
+              </div>
+              <span class="toggle-label">Enable auto-renewal by default for new subscriptions</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="savePaymentSettings()">Save Payment Settings</button>
+        </div>
+      </div>
+
+      <!-- Admin Credentials (managed by existing dashboard) -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Admin Credentials</h2>
+          <p class="card-desc">Update admin username, password, and session secret</p>
+        </div>
+        <div class="card-body">
+          <p style="font-size:14px;color:var(--muted);margin:0 0 16px">Admin credentials are managed from the <a href="/dashboard" style="color:var(--brand);text-decoration:underline">Content Dashboard</a> settings panel.</p>
+          <a href="/dashboard" class="btn btn-secondary">Go to Dashboard Settings</a>
+        </div>
+      </div>
+
+      <!-- Danger Zone -->
+      <div class="card" style="border-color:rgba(180,35,24,0.2)">
+        <div class="card-header" style="background:rgba(180,35,24,0.03)">
+          <h2 class="card-title" style="color:var(--danger)">Danger Zone</h2>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <strong>Clear All Notifications</strong>
+              <p style="font-size:13px;color:var(--muted);margin:2px 0 0">Remove all admin notifications from the database</p>
+            </div>
+            <button class="btn btn-danger" onclick="clearNotifications()">Clear Notifications</button>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <strong>Expire All Sessions</strong>
+              <p style="font-size:13px;color:var(--muted);margin:2px 0 0">Force logout all users from the mobile app</p>
+            </div>
+            <button class="btn btn-danger" onclick="expireAllSessions()">Expire Sessions</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let currentSettings = {};
+const toggleStates = {};
+
+function toast(msg,type){const t=document.createElement('div');t.className='toast toast-'+type;t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3500)}
+function toggleSidebar(){document.body.classList.toggle('collapsed');const sb=document.querySelector('.sidebar');sb&&sb.classList.toggle('show')}
+
+function toggleSwitch(name) {
+  toggleStates[name] = !toggleStates[name];
+  const el = document.getElementById('toggle' + name.charAt(0).toUpperCase() + name.slice(1).replace(/_([a-z])/g, (m,c)=>c.toUpperCase()));
+  if (el) el.classList.toggle('on', toggleStates[name]);
+}
+
+function setToggle(name, val) {
+  toggleStates[name] = val === 'true' || val === true;
+  const mapped = { maintenance: 'Maintenance', auto_renew: 'AutoRenew' };
+  const el = document.getElementById('toggle' + (mapped[name] || name));
+  if (el) el.classList.toggle('on', toggleStates[name]);
+}
+
+async function loadSettings() {
+  try {
+    const resp = await fetch('/api/admin/settings');
+    currentSettings = await resp.json();
+    document.getElementById('sAppName').value = currentSettings.app_name || '';
+    document.getElementById('sSupportEmail').value = currentSettings.support_email || '';
+    document.getElementById('sMinVersion').value = currentSettings.min_app_version || '';
+    document.getElementById('sMaintenanceMsg').value = currentSettings.maintenance_message || '';
+    document.getElementById('sCurrency').value = currentSettings.default_currency || 'usd';
+    document.getElementById('sTrialDays').value = currentSettings.free_trial_days || '0';
+    setToggle('maintenance', currentSettings.maintenance_mode);
+    setToggle('auto_renew', currentSettings.auto_renew_default);
+  } catch(e) {
+    console.error('Failed to load settings:', e);
+  }
+}
+
+async function saveAppSettings() {
+  try {
+    const data = {
+      app_name: document.getElementById('sAppName').value,
+      support_email: document.getElementById('sSupportEmail').value,
+      min_app_version: document.getElementById('sMinVersion').value,
+      maintenance_mode: String(toggleStates.maintenance || false),
+      maintenance_message: document.getElementById('sMaintenanceMsg').value
+    };
+    const resp = await fetch('/api/admin/settings', {
+      method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    if (!resp.ok) throw new Error('Failed');
+    toast('App settings saved', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function savePaymentSettings() {
+  try {
+    const data = {
+      default_currency: document.getElementById('sCurrency').value,
+      free_trial_days: document.getElementById('sTrialDays').value,
+      auto_renew_default: String(toggleStates.auto_renew || false)
+    };
+    const resp = await fetch('/api/admin/settings', {
+      method: 'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    if (!resp.ok) throw new Error('Failed');
+    toast('Payment settings saved', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function clearNotifications() {
+  if (!confirm('Remove all notifications? This cannot be undone.')) return;
+  try {
+    await fetch('/api/admin/notifications/read-all', { method: 'PUT' });
+    toast('Notifications cleared', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function expireAllSessions() {
+  if (!confirm('This will force logout ALL app users. Continue?')) return;
+  try {
+    const resp = await fetch('/api/admin/sessions/expire-all', { method: 'POST' });
+    if (!resp.ok) throw new Error('Failed');
+    toast('All sessions expired', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+loadSettings();
+</script>
+</body>
+</html>

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Users – iMD Admin</title>
+  <style>
+    :root {
+      --bg: #f4efe7; --panel: rgba(255,251,245,0.9); --panel-strong: #fffdf8;
+      --ink: #1d2a2f; --muted: #66757e; --line: rgba(35,50,58,0.12);
+      --brand: #0f766e; --brand-deep: #0b4f49;
+      --danger: #b42318; --danger-bg: #fff0ed;
+      --success: #0f7b4d; --success-bg: #edf9f0;
+      --warn: #b45309; --warn-bg: #fffbeb;
+      --shadow: 0 22px 50px rgba(31,38,43,0.12); --radius: 22px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Avenir Next","Helvetica Neue","Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(15,118,110,0.14),transparent 26%),radial-gradient(circle at top right,rgba(217,119,6,0.12),transparent 20%),linear-gradient(180deg,#f8f2e8 0%,var(--bg) 100%);min-height:100vh;display:flex}
+    a{color:inherit}
+
+    /* Sidebar */
+    .sidebar{width:250px;min-height:100vh;background:linear-gradient(180deg,rgba(12,58,69,0.97),rgba(22,90,84,0.93));color:#f9fafb;padding:0;flex-shrink:0;position:fixed;left:0;top:0;bottom:0;z-index:100;transition:transform .2s}
+    .sidebar-header{padding:20px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1)}
+    .logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}
+    .logo-icon{font-size:24px}
+    .sidebar-toggle{background:none;border:none;color:#f9fafb;font-size:20px;cursor:pointer;padding:4px 8px}
+    .sidebar-menu{padding:12px 0}
+    .menu-section{margin-bottom:8px}
+    .menu-label{padding:8px 20px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.5}
+    .menu-item{display:flex;align-items:center;gap:10px;padding:10px 20px;text-decoration:none;color:rgba(255,255,255,.7);font-size:14px;transition:all .15s}
+    .menu-item:hover{background:rgba(255,255,255,.08);color:#fff}
+    .menu-item.active{background:rgba(255,255,255,.12);color:#fff;border-left:3px solid #5eead4}
+    .menu-icon{font-size:16px;width:22px;text-align:center}
+    .collapsed .sidebar{transform:translateX(-250px)}
+    .collapsed .main-content{margin-left:0}
+
+    .main-content{margin-left:250px;flex:1;min-width:0}
+
+    /* Topbar */
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;background:var(--panel);border-bottom:1px solid var(--line)}
+    .topbar-left{display:flex;align-items:center;gap:12px}
+    .topbar-right{display:flex;align-items:center;gap:16px}
+    .breadcrumbs{font-size:14px;color:var(--muted)}
+    .breadcrumbs a{color:var(--brand);text-decoration:none}
+    .mobile-toggle{display:none;background:none;border:none;font-size:20px;cursor:pointer}
+    .btn-logout-sm{background:none;border:1px solid var(--line);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted)}
+    .btn-logout-sm:hover{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
+    .admin-name{font-size:13px;color:var(--muted)}
+    .notif-bell{cursor:pointer;font-size:18px;position:relative}
+    .notif-count{position:absolute;top:-6px;right:-8px;background:var(--danger);color:#fff;font-size:10px;padding:1px 5px;border-radius:99px}
+    .notif-dropdown{position:absolute;right:80px;top:52px;width:340px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:200;max-height:400px;overflow:auto}
+    .notif-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .notif-mark-all{background:none;border:none;color:var(--brand);cursor:pointer;font-size:12px}
+    .notif-item{padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer}
+    .notif-item.unread{background:#f0fdf4}
+    .notif-title{font-size:13px;font-weight:600}
+    .notif-msg{font-size:12px;color:var(--muted);margin-top:2px}
+    .notif-time{font-size:11px;color:var(--muted);margin-top:4px}
+
+    /* Page */
+    .page-content{padding:28px}
+    .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px}
+    .page-title{font-size:28px;font-weight:700;letter-spacing:-0.02em;margin:0}
+    .page-subtitle{color:var(--muted);font-size:14px;margin:4px 0 0}
+
+    /* Stats */
+    .stat-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:24px}
+    .stat-card{background:var(--panel);border:1px solid rgba(255,255,255,0.7);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+    .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+    .stat-value{font-size:36px;font-weight:700;margin:8px 0 4px;font-family:Georgia,serif}
+    .stat-note{font-size:12px;color:var(--muted)}
+
+    /* Card */
+    .card{background:var(--panel);border:1px solid rgba(255,255,255,0.7);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px}
+    .card-header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+    .card-body{padding:20px 24px}
+    .card-title{font-size:18px;font-weight:700;margin:0}
+
+    /* Filter */
+    .filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .search-input{padding:8px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;min-width:240px;outline:none}
+    .search-input:focus{border-color:var(--brand)}
+    .filter-select{padding:8px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:#fff;cursor:pointer}
+
+    /* Table */
+    table{width:100%;border-collapse:collapse}
+    thead th{padding:12px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border-bottom:2px solid var(--line);font-weight:600}
+    tbody td{padding:14px 16px;border-bottom:1px solid rgba(29,42,47,0.06);font-size:14px;vertical-align:middle}
+    tbody tr:hover td{background:rgba(255,255,255,0.5)}
+
+    /* Badges */
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+    .badge-free{background:#f0f4f8;color:#4a5568}
+    .badge-basic{background:#e0f2fe;color:#0369a1}
+    .badge-premium{background:#fef3c7;color:#b45309}
+    .badge-active{background:var(--success-bg);color:var(--success)}
+    .badge-expired{background:var(--danger-bg);color:var(--danger)}
+    .badge-cancelled{background:#fef3c7;color:var(--warn)}
+
+    /* Buttons */
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn-primary{background:var(--brand);color:#fff}
+    .btn-primary:hover{background:var(--brand-deep)}
+    .btn-secondary{background:#f0f4f8;color:var(--ink);border:1px solid var(--line)}
+    .btn-secondary:hover{background:#e2e8f0}
+    .btn-danger{background:var(--danger-bg);color:var(--danger)}
+    .btn-danger:hover{background:#fdd;color:#991b1b}
+    .btn-sm{padding:5px 10px;font-size:12px}
+    .btn-group{display:flex;gap:6px}
+
+    /* Modal */
+    .modal-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:500;align-items:center;justify-content:center}
+    .modal-mask.open{display:flex}
+    .modal-box{background:#fff;border-radius:18px;box-shadow:0 40px 80px rgba(0,0,0,0.2);width:480px;max-width:95vw;max-height:90vh;overflow-y:auto}
+    .modal-header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+    .modal-header h3{margin:0;font-size:18px}
+    .modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted)}
+    .modal-body{padding:20px 24px}
+    .modal-footer{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+
+    /* Form */
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink)}
+    .form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none}
+    .form-group input:focus,.form-group select:focus{border-color:var(--brand)}
+
+    /* Toast */
+    .toast{position:fixed;bottom:24px;right:24px;padding:14px 20px;border-radius:12px;color:#fff;font-size:14px;font-weight:500;z-index:999;animation:slideUp .3s ease}
+    .toast-success{background:var(--success)}
+    .toast-error{background:var(--danger)}
+    @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+    .empty-state{text-align:center;padding:40px;color:var(--muted)}
+    .avatar{width:32px;height:32px;border-radius:50%;background:var(--brand);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+    .user-cell{display:flex;align-items:center;gap:10px}
+    .user-name{font-weight:600}
+    .user-email{font-size:12px;color:var(--muted)}
+
+    @media(max-width:900px){
+      .sidebar{transform:translateX(-250px)}
+      .main-content{margin-left:0}
+      .sidebar.show{transform:translateX(0)}
+      .mobile-toggle{display:block}
+      .stat-cards{grid-template-columns:repeat(2,1fr)}
+    }
+    @media(max-width:600px){
+      .stat-cards{grid-template-columns:1fr}
+      .page-content{padding:16px}
+      .filter-bar{flex-direction:column}
+      .search-input{min-width:100%}
+    }
+  </style>
+</head>
+<body>
+  <%- include('partials/sidebar', { activePage: 'users' }) %>
+  <div class="main-content">
+    <%- include('partials/header', { breadcrumb: 'Users', currentAdminUser: typeof currentAdminUser !== 'undefined' ? currentAdminUser : 'Admin' }) %>
+    <div class="page-content">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">User Management</h1>
+          <p class="page-subtitle">View, edit, and manage all registered users</p>
+        </div>
+        <button class="btn btn-primary" onclick="openCreateModal()">+ Add User</button>
+      </div>
+
+      <div class="stat-cards" id="statCards">
+        <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value" id="sTotal">–</div></div>
+        <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value" id="sActive">–</div></div>
+        <div class="stat-card"><div class="stat-label">Premium</div><div class="stat-value" id="sPremium">–</div></div>
+        <div class="stat-card"><div class="stat-label">Active Sessions</div><div class="stat-value" id="sSessions">–</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">All Users</h2>
+          <div class="filter-bar">
+            <input type="text" class="search-input" id="searchInput" placeholder="Search by name or email..." oninput="filterTable()">
+            <select class="filter-select" id="filterType" onchange="filterTable()">
+              <option value="">All Types</option>
+              <option value="free">Free</option>
+              <option value="basic">Basic</option>
+              <option value="premium">Premium</option>
+            </select>
+            <select class="filter-select" id="filterStatus" onchange="filterTable()">
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="expired">Expired</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Subscription</th>
+                <th>Status</th>
+                <th>Expires</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="6" class="empty-state">Loading users...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit User Modal -->
+  <div class="modal-mask" id="userModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modalTitle">Add User</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editUserId">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="fName" placeholder="John Doe">
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="fUsername" placeholder="johndoe">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="fEmail" placeholder="john@example.com">
+        </div>
+        <div class="form-group" id="pwGroup">
+          <label>Password</label>
+          <input type="password" id="fPassword" placeholder="Min 8 characters">
+        </div>
+        <div class="form-group">
+          <label>Subscription Type</label>
+          <select id="fSubType">
+            <option value="free">Free</option>
+            <option value="basic">Basic</option>
+            <option value="premium">Premium</option>
+          </select>
+        </div>
+        <div class="form-group" id="expiryGroup">
+          <label>Subscription Expires</label>
+          <input type="date" id="fExpiry">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="saveBtn" onclick="saveUser()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Extend Subscription Modal -->
+  <div class="modal-mask" id="extendModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Extend Subscription</h3>
+        <button class="modal-close" onclick="document.getElementById('extendModal').classList.remove('open')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="extendUserId">
+        <div class="form-group">
+          <label>Extend by (days)</label>
+          <input type="number" id="extendDays" value="30" min="1">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('extendModal').classList.remove('open')">Cancel</button>
+        <button class="btn btn-primary" onclick="extendSub()">Extend</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let allUsers = [];
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-US', { year:'numeric',month:'short',day:'numeric' }) : '—'; }
+
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+function toggleSidebar() {
+  document.body.classList.toggle('collapsed');
+  const sb = document.querySelector('.sidebar');
+  sb && sb.classList.toggle('show');
+}
+
+async function loadUsers() {
+  try {
+    const resp = await fetch('/api/admin/users');
+    allUsers = await resp.json();
+    const analytics = await (await fetch('/api/admin/analytics')).json();
+    document.getElementById('sTotal').textContent = analytics.total_users;
+    document.getElementById('sActive').textContent = analytics.active_users;
+    document.getElementById('sSessions').textContent = analytics.active_sessions;
+    const premiumCount = allUsers.filter(u => u.subscription_type !== 'free').length;
+    document.getElementById('sPremium').textContent = premiumCount;
+    renderTable(allUsers);
+  } catch (e) {
+    document.getElementById('usersTableBody').innerHTML = '<tr><td colspan="6" class="empty-state">Error loading users</td></tr>';
+  }
+}
+
+function filterTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const type = document.getElementById('filterType').value;
+  const status = document.getElementById('filterStatus').value;
+  const filtered = allUsers.filter(u => {
+    const matchQ = !q || (u.username||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || (u.full_name||'').toLowerCase().includes(q);
+    const matchType = !type || u.subscription_type === type;
+    const matchStatus = !status || u.subscription_status === status;
+    return matchQ && matchType && matchStatus;
+  });
+  renderTable(filtered);
+}
+
+function renderTable(users) {
+  const tb = document.getElementById('usersTableBody');
+  if (!users.length) { tb.innerHTML = '<tr><td colspan="6" class="empty-state">No users found</td></tr>'; return; }
+  tb.innerHTML = users.map(u => {
+    const initials = ((u.full_name || u.username || '??').split(' ').map(w=>w[0]).join('').slice(0,2)).toUpperCase();
+    const subBadge = u.subscription_type === 'premium' ? 'badge-premium' : u.subscription_type === 'basic' ? 'badge-basic' : 'badge-free';
+    const statusBadge = u.subscription_status === 'active' ? 'badge-active' : u.subscription_status === 'expired' ? 'badge-expired' : 'badge-cancelled';
+    return '<tr>' +
+      '<td><div class="user-cell"><div class="avatar">' + esc(initials) + '</div><div><div class="user-name">' + esc(u.full_name || u.username) + '</div><div class="user-email">' + esc(u.email || '—') + '</div></div></div></td>' +
+      '<td><span class="badge ' + subBadge + '">' + esc(u.subscription_type) + '</span></td>' +
+      '<td><span class="badge ' + statusBadge + '">' + esc(u.subscription_status || 'active') + '</span></td>' +
+      '<td>' + fmtDate(u.subscription_expires) + '</td>' +
+      '<td>' + fmtDate(u.created_at) + '</td>' +
+      '<td><div class="btn-group">' +
+        '<button class="btn btn-secondary btn-sm" onclick="openEditModal(' + u.id + ')">Edit</button>' +
+        '<button class="btn btn-secondary btn-sm" onclick="openExtendModal(' + u.id + ')">Extend</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="forceLogout(' + u.id + ')">Logout</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="deleteUser(' + u.id + ')">Delete</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function openCreateModal() {
+  document.getElementById('modalTitle').textContent = 'Add User';
+  document.getElementById('editUserId').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fUsername').value = '';
+  document.getElementById('fEmail').value = '';
+  document.getElementById('fPassword').value = '';
+  document.getElementById('fSubType').value = 'free';
+  document.getElementById('fExpiry').value = '';
+  document.getElementById('pwGroup').style.display = '';
+  document.getElementById('userModal').classList.add('open');
+}
+
+function openEditModal(id) {
+  const u = allUsers.find(x => x.id === id);
+  if (!u) return;
+  document.getElementById('modalTitle').textContent = 'Edit User';
+  document.getElementById('editUserId').value = u.id;
+  document.getElementById('fName').value = u.full_name || '';
+  document.getElementById('fUsername').value = u.username || '';
+  document.getElementById('fEmail').value = u.email || '';
+  document.getElementById('fPassword').value = '';
+  document.getElementById('fSubType').value = u.subscription_type || 'free';
+  document.getElementById('fExpiry').value = u.subscription_expires ? u.subscription_expires.split('T')[0] : '';
+  document.getElementById('pwGroup').style.display = 'none';
+  document.getElementById('userModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('userModal').classList.remove('open');
+}
+
+async function saveUser() {
+  const id = document.getElementById('editUserId').value;
+  const data = {
+    full_name: document.getElementById('fName').value,
+    username: document.getElementById('fUsername').value,
+    email: document.getElementById('fEmail').value,
+    subscription_type: document.getElementById('fSubType').value,
+    subscription_expires: document.getElementById('fExpiry').value || null,
+  };
+  if (!id) data.password = document.getElementById('fPassword').value;
+  const url = id ? '/api/admin/users/' + id : '/api/admin/users';
+  const method = id ? 'PUT' : 'POST';
+  try {
+    const resp = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || 'Failed');
+    toast(id ? 'User updated' : 'User created', 'success');
+    closeModal();
+    loadUsers();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function openExtendModal(userId) {
+  document.getElementById('extendUserId').value = userId;
+  document.getElementById('extendDays').value = 30;
+  document.getElementById('extendModal').classList.add('open');
+}
+
+async function extendSub() {
+  const userId = document.getElementById('extendUserId').value;
+  const days = document.getElementById('extendDays').value;
+  try {
+    const resp = await fetch('/api/admin/extend-subscription/' + userId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: parseInt(days) })
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || 'Failed');
+    toast('Subscription extended to ' + result.new_expiry, 'success');
+    document.getElementById('extendModal').classList.remove('open');
+    loadUsers();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function forceLogout(id) {
+  if (!confirm('Force logout all sessions for this user?')) return;
+  try {
+    const resp = await fetch('/api/admin/users/' + id + '/force-logout', { method: 'POST' });
+    if (!resp.ok) throw new Error('Failed');
+    toast('User sessions terminated', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function deleteUser(id) {
+  if (!confirm('Permanently delete this user? This cannot be undone.')) return;
+  try {
+    const resp = await fetch('/api/admin/users/' + id, { method: 'DELETE' });
+    if (!resp.ok) throw new Error('Failed');
+    toast('User deleted', 'success');
+    loadUsers();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+loadUsers();
+</script>
+</body>
+</html>

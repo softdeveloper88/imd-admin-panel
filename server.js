@@ -384,6 +384,145 @@ function getReferenceContent(db, docId) {
   return null;
 }
 
+// ----- Stripe -----
+const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+const stripeEnabled = stripeSecretKey.length > 0;
+const stripe = stripeEnabled ? require('stripe')(stripeSecretKey) : null;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// Stripe webhook needs raw body — must be registered BEFORE express.json()
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripeEnabled || !stripe) {
+    return res.status(503).json({ error: 'Payments are not configured on this server' });
+  }
+
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) return res.status(500).json({ error: 'Webhook secret not configured' });
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('Stripe webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: 'Invalid signature' });
+  }
+
+  try {
+    const pool = await getMysqlPool();
+
+    // Log every event
+    await pool.execute(
+      'INSERT INTO payment_logs (event_type, stripe_event_id, data) VALUES (?, ?, ?)',
+      [event.type, event.id, JSON.stringify(event.data.object)]
+    );
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const userId = session.metadata?.user_id;
+        const planId = session.metadata?.plan_id;
+        if (!userId || !planId) break;
+
+        const [[plan]] = await pool.execute('SELECT * FROM subscription_plans WHERE id = ?', [planId]);
+        if (!plan) break;
+
+        const subType = plan.name.toLowerCase() === 'lifetime' ? 'premium' : 'premium';
+        const expiresDate = plan.duration_days > 0
+          ? new Date(Date.now() + plan.duration_days * 86400000).toISOString().split('T')[0]
+          : '2099-12-31';
+
+        await pool.execute(
+          'UPDATE users SET subscription_type=?, subscription_expires=?, subscription_status=?, stripe_customer_id=COALESCE(stripe_customer_id,?) WHERE id=?',
+          [subType, expiresDate, 'active', session.customer || null, userId]
+        );
+
+        await pool.execute(
+          'INSERT INTO payments (user_id, stripe_payment_id, stripe_subscription_id, plan_id, amount, status, payment_method) VALUES (?,?,?,?,?,?,?)',
+          [userId, session.payment_intent || session.id, session.subscription || null, planId, (session.amount_total || 0) / 100, 'completed', 'stripe']
+        );
+
+        // Update payment_logs with user_id
+        await pool.execute('UPDATE payment_logs SET user_id=? WHERE stripe_event_id=?', [userId, event.id]);
+
+        // Admin notification
+        await pool.execute(
+          'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+          ['payment', 'New Payment Received', `User #${userId} subscribed to ${plan.name} plan`, JSON.stringify({ user_id: userId, plan: plan.name, amount: (session.amount_total || 0) / 100 })]
+        );
+        break;
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
+        if (!customerId) break;
+        const [[user]] = await pool.execute('SELECT id FROM users WHERE stripe_customer_id=?', [customerId]);
+        if (!user) break;
+
+        // Find their plan from subscription metadata or current plan
+        const [[currentPlan]] = await pool.execute(
+          'SELECT sp.* FROM subscription_plans sp JOIN payments p ON p.plan_id=sp.id WHERE p.user_id=? ORDER BY p.created_at DESC LIMIT 1',
+          [user.id]
+        );
+        if (currentPlan && currentPlan.duration_days > 0) {
+          const newExpiry = new Date(Date.now() + currentPlan.duration_days * 86400000).toISOString().split('T')[0];
+          await pool.execute('UPDATE users SET subscription_expires=?, subscription_status=? WHERE id=?', [newExpiry, 'active', user.id]);
+        }
+
+        await pool.execute(
+          'INSERT INTO payments (user_id, stripe_payment_id, stripe_subscription_id, plan_id, amount, status, payment_method) VALUES (?,?,?,?,?,?,?)',
+          [user.id, invoice.payment_intent, invoice.subscription, currentPlan?.id || 1, (invoice.amount_paid || 0) / 100, 'completed', 'stripe']
+        );
+        await pool.execute('UPDATE payment_logs SET user_id=? WHERE stripe_event_id=?', [user.id, event.id]);
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
+        if (!customerId) break;
+        const [[user]] = await pool.execute('SELECT id FROM users WHERE stripe_customer_id=?', [customerId]);
+        if (!user) break;
+
+        await pool.execute('UPDATE users SET subscription_status=? WHERE id=?', ['past_due', user.id]);
+        await pool.execute('UPDATE payment_logs SET user_id=? WHERE stripe_event_id=?', [user.id, event.id]);
+
+        await pool.execute(
+          'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+          ['payment_failed', 'Payment Failed', `Payment failed for user #${user.id}`, JSON.stringify({ user_id: user.id })]
+        );
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        const customerId = sub.customer;
+        if (!customerId) break;
+        const [[user]] = await pool.execute('SELECT id FROM users WHERE stripe_customer_id=?', [customerId]);
+        if (!user) break;
+
+        await pool.execute(
+          'UPDATE users SET subscription_type=?, subscription_status=?, auto_renew=0 WHERE id=?',
+          ['free', 'cancelled', user.id]
+        );
+        await pool.execute('UPDATE payment_logs SET user_id=? WHERE stripe_event_id=?', [user.id, event.id]);
+
+        await pool.execute(
+          'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+          ['subscription_cancelled', 'Subscription Cancelled', `User #${user.id} subscription cancelled`, JSON.stringify({ user_id: user.id })]
+        );
+        break;
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Stripe webhook processing error:', err.message);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
 // ----- Middleware -----
 app.use(cors());
 app.use(express.json());
@@ -1194,6 +1333,612 @@ app.post('/logout', (req, res) => {
   return res.json({ ok: true });
 });
 
+// ═══════════════════════════════════════════════════════════
+// ─── User Web Auth (Signup / User Dashboard / Plans) ───
+// ═══════════════════════════════════════════════════════════
+
+// Middleware: verify user web session (cookie-based for web, bearer for API)
+async function requireUserAuth(req, res, next) {
+  // Try bearer token first (API calls)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return requireAppAuth(req, res, next);
+  }
+  // Try user session cookie
+  const cookies = parseCookies(req.headers.cookie);
+  const userToken = cookies['imd_user_token'];
+  if (!userToken) {
+    if (wantsHtmlResponse(req)) return res.redirect('/signup?error=Please+log+in');
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT s.id AS session_id, s.user_id, u.username, u.email, u.full_name, u.subscription_type, u.subscription_expires, u.subscription_status, u.auto_renew, u.stripe_customer_id FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.is_active=1 AND s.expires_at > NOW()',
+      [userToken]
+    );
+    if (rows.length === 0) {
+      res.clearCookie('imd_user_token', { path: '/' });
+      if (wantsHtmlResponse(req)) return res.redirect('/signup?error=Session+expired');
+      return res.status(401).json({ error: 'Session expired' });
+    }
+    req.appUser = rows[0];
+    next();
+  } catch (err) {
+    console.error('User auth error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+function hasActivePaidSubscription(user) {
+  const subscriptionType = String(user?.subscription_type || 'free').toLowerCase();
+  if (!subscriptionType || subscriptionType === 'free') return false;
+
+  const subscriptionStatus = String(user?.subscription_status || 'active').toLowerCase();
+  if (subscriptionStatus === 'expired') return false;
+
+  if (user?.subscription_expires) {
+    const expiresAt = new Date(user.subscription_expires);
+    if (!Number.isNaN(expiresAt.getTime()) && expiresAt < new Date()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function requirePaidUser(req, res, next) {
+  if (hasActivePaidSubscription(req.appUser)) return next();
+
+  if (wantsHtmlResponse(req)) {
+    return res.redirect('/select-plan?error=Please+complete+subscription+payment+to+continue');
+  }
+
+  return res.status(402).json({
+    error: 'Active paid subscription required. Please sign up and pay on the web portal.',
+    requires_subscription: true,
+    signup_url: `${BASE_URL}/signup`,
+  });
+}
+
+// GET /signup
+app.get('/signup', (req, res) => {
+  res.render('signup', {
+    error: req.query.error || '',
+    success: req.query.success || '',
+  });
+});
+
+// POST /api/auth/register
+app.post('/api/auth/register', async (req, res) => {
+  if (!wantsHtmlResponse(req)) {
+    return res.status(403).json({
+      error: 'Signup is only available on the web portal. Please complete subscription payment before login.',
+      signup_url: `${BASE_URL}/signup`,
+    });
+  }
+
+  const { full_name, email, username, password, confirm_password, device_id } = req.body || {};
+
+  // Validation
+  if (!username || !password || !email) {
+    const err = 'Username, email, and password are required';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (String(username).trim().length < 3) {
+    const err = 'Username must be at least 3 characters';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+    const err = 'Please enter a valid email address';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (String(password).length < 8) {
+    const err = 'Password must be at least 8 characters';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+    const err = 'Password must include at least 1 uppercase letter and 1 number';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (confirm_password !== undefined && password !== confirm_password) {
+    const err = 'Passwords do not match';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+
+  try {
+    const pool = await getMysqlPool();
+    const cleanUsername = String(username).trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanName = String(full_name || '').trim();
+
+    // Check uniqueness
+    const [existing] = await pool.execute(
+      'SELECT id FROM users WHERE username=? OR email=?',
+      [cleanUsername, cleanEmail]
+    );
+    if (existing.length > 0) {
+      const err = 'Username or email already exists';
+      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+      return res.status(409).json({ error: err });
+    }
+
+    // Hash password
+    const { salt, hash } = hashUserPassword(password);
+
+    // Insert user
+    const [result] = await pool.execute(
+      'INSERT INTO users (username, email, full_name, password_salt, password_hash, subscription_type, subscription_status) VALUES (?,?,?,?,?,?,?)',
+      [cleanUsername, cleanEmail, cleanName || null, salt, hash, 'free', 'active']
+    );
+    const userId = result.insertId;
+
+    // Create session
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await pool.execute(
+      'INSERT INTO sessions (user_id, token, device_id, expires_at, is_active) VALUES (?,?,?,?,1)',
+      [userId, token, device_id || null, expiresAt]
+    );
+
+    // Admin notification
+    await pool.execute(
+      'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+      ['new_user', 'New User Signup', `${cleanUsername} (${cleanEmail}) registered`, JSON.stringify({ user_id: userId, username: cleanUsername })]
+    );
+
+    // For web requests, set cookie and redirect to plan selection
+    if (wantsHtmlResponse(req)) {
+      res.cookie('imd_user_token', token, {
+        httpOnly: true, sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
+      });
+      return res.redirect('/select-plan');
+    }
+
+    // For API requests, return token
+    res.status(201).json({
+      token,
+      expires_at: expiresAt.toISOString(),
+      user: { id: userId, username: cleanUsername, email: cleanEmail, full_name: cleanName, subscription_type: 'free' },
+    });
+  } catch (err) {
+    console.error('Registration error:', err.message);
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: 'Registration failed. Please try again.', success: '' });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /signup (web form)
+app.post('/signup', (req, res, next) => {
+  // Delegate to the API handler
+  req.headers['accept'] = 'text/html';
+  app.handle(Object.assign(req, { url: '/api/auth/register', method: 'POST' }), res, next);
+});
+
+// GET /select-plan
+app.get('/select-plan', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [plans] = await pool.execute('SELECT * FROM subscription_plans WHERE is_active=1 AND price > 0 ORDER BY price ASC');
+    // Parse features JSON
+    const plansWithFeatures = plans.map(p => ({
+      ...p,
+      features: (() => { try { return JSON.parse(p.features || '[]'); } catch { return []; } })(),
+    }));
+    res.render('select-plan', {
+      plans: plansWithFeatures,
+      stripeKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+      error: req.query.error || '',
+      user: null, // may or may not be logged in
+    });
+  } catch (err) {
+    console.error('Select plan error:', err.message);
+    res.render('select-plan', { plans: [], stripeKey: '', error: '', user: null });
+  }
+});
+
+// GET /user/dashboard
+app.get('/user/dashboard', requireUserAuth, requirePaidUser, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const u = req.appUser;
+
+    // Get payment history
+    const [payments] = await pool.execute(
+      'SELECT p.*, sp.name AS plan_name FROM payments p LEFT JOIN subscription_plans sp ON p.plan_id=sp.id WHERE p.user_id=? ORDER BY p.created_at DESC LIMIT 20',
+      [u.user_id]
+    );
+
+    // Get current plan info
+    const [plans] = await pool.execute('SELECT * FROM subscription_plans WHERE is_active=1 ORDER BY price ASC');
+
+    let daysRemaining = 0;
+    if (u.subscription_expires) {
+      daysRemaining = Math.max(0, Math.ceil((new Date(u.subscription_expires) - Date.now()) / 86400000));
+    }
+
+    res.render('user-dashboard', {
+      user: u,
+      payments,
+      plans,
+      daysRemaining,
+      stripeKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+    });
+  } catch (err) {
+    console.error('User dashboard error:', err.message);
+    res.redirect('/signup?error=Something+went+wrong');
+  }
+});
+
+// GET /payment/success
+app.get('/payment/success', (req, res) => {
+  res.render('payment-success', { session_id: req.query.session_id || '' });
+});
+
+// GET /payment/cancel
+app.get('/payment/cancel', (req, res) => {
+  res.render('payment-cancel');
+});
+
+// POST /user/logout
+app.post('/user/logout', async (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const userToken = cookies['imd_user_token'];
+  if (userToken) {
+    try {
+      const pool = await getMysqlPool();
+      await pool.execute('UPDATE sessions SET is_active=0 WHERE token=?', [userToken]);
+    } catch (_) {}
+  }
+  res.clearCookie('imd_user_token', { path: '/' });
+  res.redirect('/signup');
+});
+
+// ═══════════════════════════════════════════════════════════
+// ─── Stripe Payment Endpoints ───
+// ═══════════════════════════════════════════════════════════
+
+// POST /api/payments/create-checkout-session
+app.post('/api/payments/create-checkout-session', requireUserAuth, async (req, res) => {
+  if (!stripeEnabled || !stripe) {
+    return res.status(503).json({ error: 'Payments are not configured on this server' });
+  }
+
+  const { plan_id } = req.body || {};
+  if (!plan_id) return res.status(400).json({ error: 'plan_id required' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[plan]] = await pool.execute('SELECT * FROM subscription_plans WHERE id=? AND is_active=1', [plan_id]);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    if (plan.price <= 0) return res.status(400).json({ error: 'Cannot checkout free plan' });
+    if (!plan.stripe_price_id) return res.status(400).json({ error: 'Stripe price not configured for this plan' });
+
+    const userId = req.appUser.user_id;
+    const userEmail = req.appUser.email;
+
+    // Get or create Stripe customer
+    let customerId = req.appUser.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: userEmail,
+        metadata: { user_id: String(userId) },
+      });
+      customerId = customer.id;
+      await pool.execute('UPDATE users SET stripe_customer_id=? WHERE id=?', [customerId, userId]);
+    }
+
+    const isLifetime = plan.name.toLowerCase() === 'lifetime';
+    const sessionParams = {
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
+      mode: isLifetime ? 'payment' : 'subscription',
+      success_url: `${BASE_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${BASE_URL}/payment/cancel`,
+      metadata: { user_id: String(userId), plan_id: String(plan.id) },
+    };
+
+    if (!isLifetime) {
+      sessionParams.subscription_data = {
+        metadata: { user_id: String(userId), plan_id: String(plan.id) },
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+    res.json({ url: session.url, session_id: session.id });
+  } catch (err) {
+    console.error('Checkout session error:', err.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// POST /api/payments/create-mobile-checkout (for in-app WebView)
+app.post('/api/payments/create-mobile-checkout', requireAppAuth, async (req, res) => {
+  if (!stripeEnabled || !stripe) {
+    return res.status(503).json({ error: 'Payments are not configured on this server' });
+  }
+
+  const { plan_id } = req.body || {};
+  if (!plan_id) return res.status(400).json({ error: 'plan_id required' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[plan]] = await pool.execute('SELECT * FROM subscription_plans WHERE id=? AND is_active=1', [plan_id]);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    if (plan.price <= 0) return res.status(400).json({ error: 'Cannot checkout free plan' });
+    if (!plan.stripe_price_id) return res.status(400).json({ error: 'Stripe price not configured for this plan' });
+
+    const userId = req.appUser.user_id;
+    const [userRows] = await pool.execute('SELECT email, stripe_customer_id FROM users WHERE id=?', [userId]);
+    const user = userRows[0];
+
+    let customerId = user?.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user?.email || '',
+        metadata: { user_id: String(userId) },
+      });
+      customerId = customer.id;
+      await pool.execute('UPDATE users SET stripe_customer_id=? WHERE id=?', [customerId, userId]);
+    }
+
+    const isLifetime = plan.name.toLowerCase() === 'lifetime';
+    const sessionParams = {
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
+      mode: isLifetime ? 'payment' : 'subscription',
+      success_url: `${BASE_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}&mobile=1`,
+      cancel_url: `${BASE_URL}/payment/cancel?mobile=1`,
+      metadata: { user_id: String(userId), plan_id: String(plan.id) },
+    };
+
+    if (!isLifetime) {
+      sessionParams.subscription_data = {
+        metadata: { user_id: String(userId), plan_id: String(plan.id) },
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
+    res.json({ url: session.url, session_id: session.id });
+  } catch (err) {
+    console.error('Mobile checkout error:', err.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// GET /api/payments/history
+app.get('/api/payments/history', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [payments] = await pool.execute(
+      'SELECT p.*, sp.name AS plan_name FROM payments p LEFT JOIN subscription_plans sp ON p.plan_id=sp.id WHERE p.user_id=? ORDER BY p.created_at DESC LIMIT 50',
+      [req.appUser.user_id]
+    );
+    res.json(payments);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// ─── Subscription Management API ───
+// ═══════════════════════════════════════════════════════════
+
+// GET /api/subscription/status
+app.get('/api/subscription/status', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [[user]] = await pool.execute(
+      'SELECT subscription_type, subscription_expires, subscription_status, auto_renew, stripe_customer_id FROM users WHERE id=?',
+      [req.appUser.user_id]
+    );
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let daysRemaining = 0;
+    if (user.subscription_expires) {
+      daysRemaining = Math.max(0, Math.ceil((new Date(user.subscription_expires) - Date.now()) / 86400000));
+    }
+
+    // Get current plan name
+    const [[latestPayment]] = await pool.execute(
+      'SELECT sp.name AS plan_name, sp.price FROM payments p JOIN subscription_plans sp ON p.plan_id=sp.id WHERE p.user_id=? AND p.status=? ORDER BY p.created_at DESC LIMIT 1',
+      [req.appUser.user_id, 'completed']
+    );
+
+    res.json({
+      subscription_type: user.subscription_type,
+      subscription_expires: user.subscription_expires,
+      subscription_status: user.subscription_status,
+      auto_renew: !!user.auto_renew,
+      days_remaining: daysRemaining,
+      plan_name: latestPayment?.plan_name || (user.subscription_type === 'free' ? 'Free' : 'Premium'),
+      plan_price: latestPayment?.price || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/subscription/plans
+app.get('/api/subscription/plans', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [plans] = await pool.execute('SELECT id, name, description, duration_days, price, access_level, features FROM subscription_plans WHERE is_active=1 ORDER BY price ASC');
+    const parsed = plans.map(p => ({
+      ...p,
+      features: (() => { try { return JSON.parse(p.features || '[]'); } catch { return []; } })(),
+    }));
+    res.json(parsed);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/subscription/toggle-auto-renew
+app.post('/api/subscription/toggle-auto-renew', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [[user]] = await pool.execute('SELECT auto_renew, stripe_customer_id FROM users WHERE id=?', [req.appUser.user_id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const newAutoRenew = !user.auto_renew;
+
+    // If user has a Stripe subscription, update it
+    if (user.stripe_customer_id && process.env.STRIPE_SECRET_KEY) {
+      try {
+        const subscriptions = await stripe.subscriptions.list({ customer: user.stripe_customer_id, status: 'active', limit: 1 });
+        if (subscriptions.data.length > 0) {
+          await stripe.subscriptions.update(subscriptions.data[0].id, {
+            cancel_at_period_end: !newAutoRenew,
+          });
+        }
+      } catch (stripeErr) {
+        console.error('Stripe auto-renew toggle error:', stripeErr.message);
+      }
+    }
+
+    await pool.execute('UPDATE users SET auto_renew=? WHERE id=?', [newAutoRenew ? 1 : 0, req.appUser.user_id]);
+    res.json({ auto_renew: newAutoRenew });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/subscription/change-plan
+app.post('/api/subscription/change-plan', requireAppAuth, async (req, res) => {
+  const { plan_id } = req.body || {};
+  if (!plan_id) return res.status(400).json({ error: 'plan_id required' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[plan]] = await pool.execute('SELECT * FROM subscription_plans WHERE id=? AND is_active=1', [plan_id]);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+
+    // For paid plans, redirect to checkout
+    if (plan.price > 0) {
+      return res.json({ action: 'checkout', plan_id: plan.id });
+    }
+
+    // Downgrade to free
+    await pool.execute(
+      'UPDATE users SET subscription_type=?, subscription_status=? WHERE id=?',
+      ['free', 'active', req.appUser.user_id]
+    );
+    res.json({ success: true, subscription_type: 'free' });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/subscription/cancel
+app.post('/api/subscription/cancel', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [[user]] = await pool.execute('SELECT stripe_customer_id, subscription_expires FROM users WHERE id=?', [req.appUser.user_id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Cancel Stripe subscription at period end
+    if (user.stripe_customer_id && process.env.STRIPE_SECRET_KEY) {
+      try {
+        const subscriptions = await stripe.subscriptions.list({ customer: user.stripe_customer_id, status: 'active', limit: 1 });
+        if (subscriptions.data.length > 0) {
+          await stripe.subscriptions.update(subscriptions.data[0].id, { cancel_at_period_end: true });
+        }
+      } catch (stripeErr) {
+        console.error('Stripe cancel error:', stripeErr.message);
+      }
+    }
+
+    await pool.execute('UPDATE users SET subscription_status=?, auto_renew=0 WHERE id=?', ['cancelled', req.appUser.user_id]);
+
+    let daysRemaining = 0;
+    if (user.subscription_expires) {
+      daysRemaining = Math.max(0, Math.ceil((new Date(user.subscription_expires) - Date.now()) / 86400000));
+    }
+
+    res.json({ success: true, days_remaining: daysRemaining, message: `Your subscription will remain active until ${user.subscription_expires || 'the end of your billing period'}.` });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/subscription/history
+app.get('/api/subscription/history', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [payments] = await pool.execute(
+      'SELECT p.amount, p.currency, p.status, p.payment_method, p.created_at, sp.name AS plan_name FROM payments p LEFT JOIN subscription_plans sp ON p.plan_id=sp.id WHERE p.user_id=? ORDER BY p.created_at DESC LIMIT 50',
+      [req.appUser.user_id]
+    );
+    res.json(payments);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/auth/account — update profile
+app.put('/api/auth/account', requireAppAuth, async (req, res) => {
+  const { full_name, email } = req.body || {};
+  try {
+    const pool = await getMysqlPool();
+    const updates = [];
+    const params = [];
+
+    if (full_name !== undefined) { updates.push('full_name=?'); params.push(String(full_name).trim()); }
+    if (email !== undefined) {
+      const cleanEmail = String(email).trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
+      // Check uniqueness
+      const [existing] = await pool.execute('SELECT id FROM users WHERE email=? AND id!=?', [cleanEmail, req.appUser.user_id]);
+      if (existing.length > 0) return res.status(409).json({ error: 'Email already in use' });
+      updates.push('email=?');
+      params.push(cleanEmail);
+    }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(req.appUser.user_id);
+    await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE id=?`, params);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/auth/change-password
+app.put('/api/auth/change-password', requireAppAuth, async (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password) return res.status(400).json({ error: 'Current and new password required' });
+  if (String(new_password).length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[user]] = await pool.execute('SELECT password_salt, password_hash FROM users WHERE id=?', [req.appUser.user_id]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (!verifyUserPassword(current_password, user.password_salt, user.password_hash)) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const { salt, hash } = hashUserPassword(new_password);
+    await pool.execute('UPDATE users SET password_salt=?, password_hash=? WHERE id=?', [salt, hash, req.appUser.user_id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/settings/credentials', requireAdmin, (req, res) => {
   const username = String(req.body.username || '').trim();
   const currentPassword = String(req.body.currentPassword || '');
@@ -1489,7 +2234,7 @@ async function requireAppAuth(req, res, next) {
   try {
     const pool = await getMysqlPool();
     const [rows] = await pool.execute(
-      'SELECT s.id AS session_id, s.user_id, s.device_id, u.username, u.subscription_type, u.subscription_expires FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.is_active = 1 AND s.expires_at > NOW()',
+      'SELECT s.id AS session_id, s.user_id, s.device_id, u.username, u.subscription_type, u.subscription_expires, COALESCE(sp.access_level, 1) AS access_level FROM sessions s JOIN users u ON s.user_id = u.id LEFT JOIN subscription_plans sp ON sp.name = u.subscription_type WHERE s.token = ? AND s.is_active = 1 AND s.expires_at > NOW()',
       [token]
     );
     if (rows.length === 0) {
@@ -1520,6 +2265,14 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    if (!hasActivePaidSubscription(user)) {
+      return res.status(402).json({
+        error: 'Active paid subscription required. Please sign up and complete payment on the web portal before login.',
+        requires_subscription: true,
+        signup_url: `${BASE_URL}/signup`,
+      });
+    }
+
     // Single-device enforcement: deactivate all existing sessions for this user
     await pool.execute('UPDATE sessions SET is_active = 0 WHERE user_id = ?', [user.id]);
 
@@ -1530,6 +2283,12 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
       [user.id, token, device_id || null, expiresAt]
     );
 
+    const [planRows] = await pool.execute(
+      'SELECT access_level FROM subscription_plans WHERE name = ?',
+      [user.subscription_type]
+    );
+    const accessLevel = planRows[0]?.access_level ?? 1;
+
     res.json({
       token,
       expires_at: expiresAt.toISOString(),
@@ -1538,6 +2297,7 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
         username: user.username,
         subscription_type: user.subscription_type,
         subscription_expires: user.subscription_expires,
+        access_level: accessLevel,
       },
     });
   } catch (err) {
@@ -1567,6 +2327,7 @@ app.get('/api/auth/verify', requireAppAuth, (req, res) => {
       username: req.appUser.username,
       subscription_type: req.appUser.subscription_type,
       subscription_expires: req.appUser.subscription_expires,
+      access_level: req.appUser.access_level ?? 1,
     },
   });
 });
@@ -1579,6 +2340,7 @@ app.get('/api/auth/account', requireAppAuth, (req, res) => {
     username: u.username,
     subscription_type: u.subscription_type,
     subscription_expires: u.subscription_expires,
+    access_level: u.access_level ?? 1,
     device_id: u.device_id,
   });
 });
@@ -1627,11 +2389,42 @@ app.get('/api/auth/favorites', requireAppAuth, async (req, res) => {
   }
 });
 
+async function loadPackageAccessMap() {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT package_name, min_access_level FROM package_access');
+    return Object.fromEntries(rows.map(r => [r.package_name, r.min_access_level]));
+  } catch (_) {
+    return {};
+  }
+}
+
 // ----- REST API -----
-app.get('/api/packages', (req, res) => {
-  const packages = loadDashboardPackages()
-    .map(({ path: _, ...rest }) => rest);
-  res.json(packages);
+app.get('/api/packages', async (req, res) => {
+  const accessMap = await loadPackageAccessMap();
+  let packages = loadDashboardPackages()
+    .map(({ path: _, ...rest }) => ({ ...rest, minAccessLevel: accessMap[rest.name] ?? 1 }));
+
+  // Server-side search
+  const search = String(req.query.search || '').trim().toLowerCase();
+  if (search) {
+    packages = packages.filter(pkg => {
+      const readableName = (pkg.name || '').replace(/[-_]/g, ' ');
+      const haystack = [pkg.name, readableName, pkg.category, pkg.type]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(search);
+    });
+  }
+
+  // Pagination: ?page=1&limit=20
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+
+  const total = packages.length;
+  const start = (page - 1) * limit;
+  const paged = packages.slice(start, start + limit);
+
+  res.json({ packages: paged, total, page, limit });
 });
 
 app.get('/api/packages/:name', (req, res) => {
@@ -2109,6 +2902,21 @@ app.get('/api/packages/:name/download-db', requireAppAuth, async (req, res) => {
   const pkg = getPackageInfo(req.params.name);
   if (!pkg || !pkg.hasDb) return res.status(404).json({ error: 'No database found' });
 
+  // Access-level check
+  try {
+    const pool = await getMysqlPool();
+    const [accessRows] = await pool.execute(
+      'SELECT min_access_level FROM package_access WHERE package_name = ?',
+      [req.params.name]
+    );
+    const minLevel = accessRows[0]?.min_access_level ?? 1;
+    if ((req.appUser.access_level ?? 1) < minLevel) {
+      return res.status(403).json({ error: 'Subscription upgrade required', requires_upgrade: true });
+    }
+  } catch (err) {
+    console.error('Access check error:', err.message);
+  }
+
   // Record the download in MySQL
   try {
     const pool = await getMysqlPool();
@@ -2168,6 +2976,27 @@ app.get('/api/tabs/:tabName', async (req, res) => {
   const validTabs = ['newest', 'popular', 'trending', 'updates', 'paid'];
   if (!validTabs.includes(tabName)) return res.status(400).json({ error: 'Invalid tab' });
 
+  // Pagination & search params
+  const search = String(req.query.search || '').trim().toLowerCase();
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+
+  function applySearchAndPaginate(packages) {
+    let filtered = packages;
+    if (search) {
+      filtered = packages.filter(pkg => {
+        const readableName = (pkg.name || '').replace(/[-_]/g, ' ');
+        const haystack = [pkg.name, readableName, pkg.category, pkg.type]
+          .filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(search);
+      });
+    }
+    const total = filtered.length;
+    const start = (page - 1) * limit;
+    const paged = filtered.slice(start, start + limit);
+    return { packages: paged, total, page, limit };
+  }
+
   try {
     const pool = await getMysqlPool();
 
@@ -2177,7 +3006,8 @@ app.get('/api/tabs/:tabName', async (req, res) => {
       [tabName]
     );
 
-    const allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => rest);
+    const accessMap = await loadPackageAccessMap();
+    const allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => ({ ...rest, minAccessLevel: accessMap[rest.name] ?? 1 }));
 
     if (pinned.length > 0) {
       // Return curated list + remaining packages
@@ -2196,51 +3026,59 @@ app.get('/api/tabs/:tabName', async (req, res) => {
         remaining.sort((a, b) => (countMap[b.name] || 0) - (countMap[a.name] || 0));
       }
 
-      res.json([...pinnedPkgs, ...remaining]);
+      res.json(applySearchAndPaginate([...pinnedPkgs, ...remaining]));
       return;
     }
 
     // Auto-populate based on tab type
     switch (tabName) {
       case 'newest':
-        // Sort by filesystem mtime (newest first)
-        res.json(allPackages.sort((a, b) => (b._mtime || 0) - (a._mtime || 0)));
+        res.json(applySearchAndPaginate(allPackages.sort((a, b) => (b._mtime || 0) - (a._mtime || 0))));
         break;
       case 'popular': {
         const [stats] = await pool.execute('SELECT package_name, download_count FROM download_stats ORDER BY download_count DESC');
         const countMap = Object.fromEntries(stats.map(s => [s.package_name, s.download_count]));
-        res.json(allPackages.sort((a, b) => (countMap[b.name] || 0) - (countMap[a.name] || 0)));
+        res.json(applySearchAndPaginate(allPackages.sort((a, b) => (countMap[b.name] || 0) - (countMap[a.name] || 0))));
         break;
       }
       case 'trending': {
-        // Trending = most downloaded in last 7 days (based on user_downloads)
         const [recent] = await pool.execute(
           'SELECT package_name, COUNT(*) AS cnt FROM user_downloads WHERE downloaded_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY package_name ORDER BY cnt DESC'
         );
         const trendMap = Object.fromEntries(recent.map(r => [r.package_name, r.cnt]));
-        res.json(allPackages.sort((a, b) => (trendMap[b.name] || 0) - (trendMap[a.name] || 0)));
+        res.json(applySearchAndPaginate(allPackages.sort((a, b) => (trendMap[b.name] || 0) - (trendMap[a.name] || 0))));
         break;
       }
       case 'updates':
-        // Packages with most recent changes
-        res.json(allPackages.sort((a, b) => (b._mtime || 0) - (a._mtime || 0)));
+        res.json(applySearchAndPaginate(allPackages.sort((a, b) => (b._mtime || 0) - (a._mtime || 0))));
         break;
       case 'paid': {
         const [paid] = await pool.execute(
           'SELECT package_name FROM package_access WHERE min_access_level > 1'
         );
         const paidNames = new Set(paid.map(r => r.package_name));
-        res.json(allPackages.filter(p => paidNames.has(p.name)));
+        res.json(applySearchAndPaginate(allPackages.filter(p => paidNames.has(p.name))));
         break;
       }
       default:
-        res.json(allPackages);
+        res.json(applySearchAndPaginate(allPackages));
     }
   } catch (err) {
     console.error('Tab data error:', err.message);
-    // Fallback: return all packages
-    const allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => rest);
-    res.json(allPackages);
+    // Fallback: return all packages with pagination
+    let allPackages = loadDashboardPackages().map(({ path: _, ...rest }) => rest);
+    if (search) {
+      allPackages = allPackages.filter(pkg => {
+        const readableName = (pkg.name || '').replace(/[-_]/g, ' ');
+        const haystack = [pkg.name, readableName, pkg.category, pkg.type]
+          .filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(search);
+      });
+    }
+    const total = allPackages.length;
+    const start = (page - 1) * limit;
+    const paged = allPackages.slice(start, start + limit);
+    res.json({ packages: paged, total, page, limit });
   }
 });
 
@@ -2638,6 +3476,221 @@ app.get('/api/admin/logs', requireAdmin, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ═══════════════════════════════════════════════════════════
+// ─── Admin: Revenue, Notifications, Settings, Subscriptions ───
+// ═══════════════════════════════════════════════════════════
+
+// GET /api/admin/revenue
+app.get('/api/admin/revenue', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [[{ total_revenue }]] = await pool.execute('SELECT COALESCE(SUM(amount),0) AS total_revenue FROM payments WHERE status=?', ['completed']);
+    const [[{ monthly_revenue }]] = await pool.execute(
+      'SELECT COALESCE(SUM(amount),0) AS monthly_revenue FROM payments WHERE status=? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)', ['completed']
+    );
+    const [revenueByMonth] = await pool.execute(
+      "SELECT DATE_FORMAT(created_at, '%Y-%m') AS month, SUM(amount) AS revenue FROM payments WHERE status='completed' GROUP BY month ORDER BY month DESC LIMIT 12"
+    );
+    const [revenueByPlan] = await pool.execute(
+      "SELECT sp.name, COUNT(*) AS count, SUM(p.amount) AS revenue FROM payments p JOIN subscription_plans sp ON p.plan_id=sp.id WHERE p.status='completed' GROUP BY sp.name"
+    );
+    res.json({ total_revenue, monthly_revenue, revenue_by_month: revenueByMonth, revenue_by_plan: revenueByPlan });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/subscriptions
+app.get('/api/admin/subscriptions', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT u.id, u.username, u.email, u.full_name, u.subscription_type, u.subscription_expires, u.subscription_status, u.auto_renew, u.created_at FROM users WHERE subscription_type!=? ORDER BY u.created_at DESC',
+      ['free']
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/refund/:id
+app.post('/api/admin/refund/:id', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [[payment]] = await pool.execute('SELECT * FROM payments WHERE id=?', [req.params.id]);
+    if (!payment) return res.status(404).json({ error: 'Payment not found' });
+    if (payment.status === 'refunded') return res.status(400).json({ error: 'Already refunded' });
+
+    if (payment.stripe_payment_id && process.env.STRIPE_SECRET_KEY) {
+      await stripe.refunds.create({ payment_intent: payment.stripe_payment_id });
+    }
+
+    await pool.execute('UPDATE payments SET status=? WHERE id=?', ['refunded', req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'refund_payment', 'payment', req.params.id, JSON.stringify({ amount: payment.amount, user_id: payment.user_id }), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/extend-subscription/:userId
+app.post('/api/admin/extend-subscription/:userId', requireAdmin, async (req, res) => {
+  const { plan_id, days } = req.body || {};
+  if (!days && !plan_id) return res.status(400).json({ error: 'days or plan_id required' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[user]] = await pool.execute('SELECT * FROM users WHERE id=?', [req.params.userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let newExpiry;
+    const currentExpiry = user.subscription_expires ? new Date(user.subscription_expires) : new Date();
+    const base = currentExpiry > new Date() ? currentExpiry : new Date();
+
+    if (days) {
+      newExpiry = new Date(base.getTime() + parseInt(days) * 86400000);
+    } else if (plan_id) {
+      const [[plan]] = await pool.execute('SELECT duration_days FROM subscription_plans WHERE id=?', [plan_id]);
+      if (!plan) return res.status(404).json({ error: 'Plan not found' });
+      newExpiry = new Date(base.getTime() + plan.duration_days * 86400000);
+    }
+
+    await pool.execute(
+      'UPDATE users SET subscription_type=?, subscription_expires=?, subscription_status=? WHERE id=?',
+      ['premium', newExpiry.toISOString().split('T')[0], 'active', req.params.userId]
+    );
+    await logAdminAction(getAdminSettings().username, 'extend_subscription', 'user', req.params.userId, JSON.stringify({ new_expiry: newExpiry.toISOString().split('T')[0] }), req.ip);
+    res.json({ success: true, new_expiry: newExpiry.toISOString().split('T')[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/notifications
+app.get('/api/admin/notifications', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT * FROM admin_notifications ORDER BY created_at DESC LIMIT 50');
+    const [[{ unread }]] = await pool.execute('SELECT COUNT(*) AS unread FROM admin_notifications WHERE is_read=0');
+    res.json({ notifications: rows, unread });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/notifications/:id/read
+app.put('/api/admin/notifications/:id/read', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('UPDATE admin_notifications SET is_read=1 WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/notifications/read-all
+app.put('/api/admin/notifications/read-all', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('UPDATE admin_notifications SET is_read=1');
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/settings
+app.get('/api/admin/settings', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute('SELECT setting_key, setting_value FROM app_settings');
+    const settings = {};
+    rows.forEach(r => { settings[r.setting_key] = r.setting_value; });
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/settings
+app.put('/api/admin/settings', requireAdmin, async (req, res) => {
+  const updates = req.body || {};
+  try {
+    const pool = await getMysqlPool();
+    for (const [key, value] of Object.entries(updates)) {
+      const safeKey = String(key).slice(0, 100);
+      const safeValue = String(value).slice(0, 5000);
+      await pool.execute(
+        'INSERT INTO app_settings (setting_key, setting_value) VALUES (?,?) ON DUPLICATE KEY UPDATE setting_value=?',
+        [safeKey, safeValue, safeValue]
+      );
+    }
+    await logAdminAction(getAdminSettings().username, 'update_settings', 'settings', null, JSON.stringify(Object.keys(updates)), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin pages (new views) ───
+app.get('/admin/users', requireAdmin, (req, res) => {
+  res.render('users', { currentAdminUser: getAdminSettings().username });
+});
+
+app.get('/admin/subscriptions', requireAdmin, (req, res) => {
+  res.render('subscriptions', { stripeKey: process.env.STRIPE_PUBLISHABLE_KEY || '', currentAdminUser: getAdminSettings().username });
+});
+
+app.get('/admin/content', requireAdmin, (req, res) => {
+  res.redirect('/dashboard');
+});
+
+app.get('/admin/analytics', requireAdmin, (req, res) => {
+  res.render('analytics', { currentAdminUser: getAdminSettings().username });
+});
+
+app.get('/admin/settings', requireAdmin, (req, res) => {
+  res.render('settings', { stripeKey: process.env.STRIPE_PUBLISHABLE_KEY || '', currentAdminUser: getAdminSettings().username });
+});
+
+// POST /api/admin/sessions/expire-all
+app.post('/api/admin/sessions/expire-all', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('UPDATE sessions SET is_active=0 WHERE is_active=1');
+    await logAdminAction(getAdminSettings().username, 'expire_all_sessions', 'sessions', null, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Subscription Expiry Cron (runs every hour) ───
+setInterval(async () => {
+  try {
+    const pool = await getMysqlPool();
+    const [expired] = await pool.execute(
+      "SELECT id, username FROM users WHERE subscription_expires < NOW() AND subscription_type != 'free' AND subscription_status != 'expired'"
+    );
+    if (expired.length > 0) {
+      await pool.execute(
+        "UPDATE users SET subscription_type='free', subscription_status='expired' WHERE subscription_expires < NOW() AND subscription_type != 'free' AND subscription_status != 'expired'"
+      );
+      for (const u of expired) {
+        await pool.execute(
+          'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+          ['subscription_expired', 'Subscription Expired', `User ${u.username} (#${u.id}) subscription expired`, JSON.stringify({ user_id: u.id })]
+        );
+      }
+      console.log(`[Cron] Expired ${expired.length} subscriptions`);
+    }
+  } catch (err) {
+    console.error('[Cron] Subscription expiry check failed:', err.message);
+  }
+}, 60 * 60 * 1000); // every hour
 
 async function start() {
   SQL = await initSqlJs();

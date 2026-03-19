@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Account — iMedicalDoctor</title>
+  <style>
+    :root {
+      --brand: #0f766e; --brand-deep: #0b4f49; --brand-light: #ccfbf1;
+      --bg: #f7f8fc; --ink: #1a202c; --muted: #718096; --white: #fff; --line: #e2e8f0;
+      --success: #059669; --warning: #d97706; --danger: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Avenir Next","Segoe UI",system-ui,sans-serif; background: var(--bg); color: var(--ink); }
+
+    .topbar {
+      background: var(--white); border-bottom: 1px solid var(--line); padding: 16px 32px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .topbar .logo { font-size: 20px; font-weight: 800; color: var(--brand); }
+    .topbar nav { display: flex; gap: 16px; align-items: center; }
+    .topbar nav a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
+    .topbar nav a:hover { color: var(--brand); }
+    .topbar .btn-logout {
+      padding: 8px 16px; border-radius: 8px; background: transparent;
+      border: 1.5px solid var(--line); color: var(--muted); font-size: 13px;
+      cursor: pointer; font-weight: 600;
+    }
+
+    .container { max-width: 900px; margin: 32px auto; padding: 0 24px; }
+
+    .greeting { margin-bottom: 32px; }
+    .greeting h1 { font-size: 28px; font-weight: 700; }
+    .greeting p { color: var(--muted); margin-top: 4px; }
+
+    /* Subscription card */
+    .sub-card {
+      background: var(--white); border-radius: 16px; padding: 28px;
+      border: 1px solid var(--line); margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+    }
+    .sub-card .sub-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .sub-card h2 { font-size: 20px; font-weight: 700; }
+    .badge {
+      display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+    }
+    .badge-active { background: #d1fae5; color: var(--success); }
+    .badge-expired { background: #fee2e2; color: var(--danger); }
+    .badge-cancelled { background: #fef3c7; color: var(--warning); }
+    .badge-past_due { background: #fee2e2; color: var(--danger); }
+    .badge-free { background: #e2e8f0; color: var(--muted); }
+
+    .sub-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 16px; margin-bottom: 20px; }
+    .sub-info .info-item { }
+    .sub-info .info-label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .sub-info .info-value { font-size: 18px; font-weight: 700; }
+
+    .progress-bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--brand); border-radius: 3px; transition: width 0.5s; }
+
+    .sub-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      padding: 12px 24px; border-radius: 10px; font-weight: 700; font-size: 14px;
+      cursor: pointer; border: none; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: var(--brand); color: var(--white); }
+    .btn-primary:hover { box-shadow: 0 8px 24px rgba(15,118,110,0.3); }
+    .btn-outline { background: transparent; border: 2px solid var(--brand); color: var(--brand); }
+    .btn-outline:hover { background: var(--brand-light); }
+    .btn-danger { background: transparent; border: 2px solid var(--danger); color: var(--danger); }
+    .btn-danger:hover { background: #fee2e2; }
+    .btn-sm { padding: 8px 16px; font-size: 13px; }
+
+    /* Auto-renew toggle */
+    .auto-renew { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 14px 18px; background: #f7fafc; border-radius: 10px; }
+    .toggle-switch { position: relative; width: 44px; height: 24px; cursor: pointer; }
+    .toggle-switch input { display: none; }
+    .toggle-track { position: absolute; inset: 0; background: var(--line); border-radius: 12px; transition: 0.3s; }
+    .toggle-switch input:checked + .toggle-track { background: var(--brand); }
+    .toggle-track::after {
+      content: ''; position: absolute; width: 20px; height: 20px; background: var(--white);
+      border-radius: 50%; top: 2px; left: 2px; transition: 0.3s;
+    }
+    .toggle-switch input:checked + .toggle-track::after { transform: translateX(20px); }
+
+    /* Payment history table */
+    .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px; border-bottom: 2px solid var(--line); }
+    table td { padding: 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    table tr:last-child td { border-bottom: none; }
+    .status-completed { color: var(--success); font-weight: 600; }
+    .status-failed { color: var(--danger); font-weight: 600; }
+    .status-refunded { color: var(--warning); font-weight: 600; }
+
+    /* Account settings */
+    .settings-form { display: grid; gap: 16px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field input {
+      width: 100%; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 14px;
+    }
+    .field input:focus { outline: none; border-color: var(--brand); }
+
+    .msg { padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
+    .msg-success { background: #d1fae5; color: var(--success); }
+    .msg-error { background: #fee2e2; color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">iMD</div>
+    <nav>
+      <a href="/select-plan">Plans</a>
+      <a href="/user/dashboard">Dashboard</a>
+      <form method="POST" action="/user/logout" style="display:inline">
+        <button type="submit" class="btn-logout">Logout</button>
+      </form>
+    </nav>
+  </div>
+
+  <div class="container">
+    <div class="greeting">
+      <h1>Welcome back<%= user.full_name ? ', ' + user.full_name : '' %>!</h1>
+      <p>Manage your subscription and account settings</p>
+    </div>
+
+    <div id="messages"></div>
+
+    <!-- Subscription Status -->
+    <div class="sub-card">
+      <div class="sub-header">
+        <h2>Subscription</h2>
+        <% const status = user.subscription_status || (user.subscription_type === 'free' ? 'free' : 'active'); %>
+        <span class="badge badge-<%= status %>"><%= status.replace('_',' ') %></span>
+      </div>
+
+      <div class="sub-info">
+        <div class="info-item">
+          <div class="info-label">Current Plan</div>
+          <div class="info-value"><%= user.subscription_type === 'free' ? 'Free' : 'Premium' %></div>
+        </div>
+        <% if (user.subscription_expires) { %>
+        <div class="info-item">
+          <div class="info-label">Expires</div>
+          <div class="info-value"><%= new Date(user.subscription_expires).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) %></div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Days Remaining</div>
+          <div class="info-value"><%= daysRemaining %></div>
+        </div>
+        <% } %>
+      </div>
+
+      <% if (user.subscription_expires && daysRemaining > 0) { %>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: <%= Math.min(100, (daysRemaining / 365) * 100) %>%"></div>
+      </div>
+      <% } %>
+
+      <% if (user.subscription_type !== 'free') { %>
+      <div class="auto-renew" style="margin-top: 16px;">
+        <label class="toggle-switch">
+          <input type="checkbox" id="autoRenewToggle" <%= user.auto_renew ? 'checked' : '' %>>
+          <div class="toggle-track"></div>
+        </label>
+        <div>
+          <strong style="font-size:14px">Auto-Renewal</strong>
+          <div style="font-size:12px;color:var(--muted)">Automatically renew your subscription</div>
+        </div>
+      </div>
+      <% } %>
+
+      <div class="sub-actions">
+        <a href="/select-plan" class="btn btn-primary"><%= user.subscription_type === 'free' ? 'Upgrade Now' : 'Change Plan' %></a>
+        <% if (user.subscription_type !== 'free') { %>
+        <button class="btn btn-danger btn-sm" onclick="cancelSubscription()">Cancel Subscription</button>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- Payment History -->
+    <div class="sub-card">
+      <h2 class="section-title">Payment History</h2>
+      <% if (payments.length === 0) { %>
+        <p style="color:var(--muted); font-size:14px;">No payments yet.</p>
+      <% } else { %>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <% payments.forEach(p => { %>
+            <tr>
+              <td><%= new Date(p.created_at).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) %></td>
+              <td><%= p.plan_name || '—' %></td>
+              <td>$<%= Number(p.amount).toFixed(2) %> <%= p.currency || 'USD' %></td>
+              <td><span class="status-<%= p.status %>"><%= p.status %></span></td>
+            </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+
+    <!-- Account Settings -->
+    <div class="sub-card">
+      <h2 class="section-title">Account Settings</h2>
+      <form class="settings-form" id="profileForm">
+        <div class="form-row">
+          <div class="field">
+            <label>Full Name</label>
+            <input type="text" name="full_name" value="<%= user.full_name || '' %>" placeholder="Your name">
+          </div>
+          <div class="field">
+            <label>Email</label>
+            <input type="email" name="email" value="<%= user.email || '' %>" placeholder="email@example.com">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm">Save Changes</button>
+      </form>
+    </div>
+
+    <div class="sub-card">
+      <h2 class="section-title">Change Password</h2>
+      <form class="settings-form" id="passwordForm">
+        <div class="form-row">
+          <div class="field">
+            <label>Current Password</label>
+            <input type="password" name="current_password" required>
+          </div>
+          <div class="field">
+            <label>New Password</label>
+            <input type="password" name="new_password" required minlength="8" placeholder="Min 8 characters">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm">Update Password</button>
+      </form>
+    </div>
+
+    <!-- App Download -->
+    <div class="sub-card" style="text-align:center;">
+      <h2 class="section-title">Download the App</h2>
+      <p style="color:var(--muted); font-size:14px; margin-bottom:16px;">Access your content on the go with the iMD mobile app.</p>
+      <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+        <a href="#" class="btn btn-primary">Download for iOS</a>
+        <a href="#" class="btn btn-outline">Download for Android</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showMsg(type, text) {
+      const el = document.getElementById('messages');
+      el.innerHTML = '<div class="msg msg-' + type + '">' + text + '</div>';
+      setTimeout(() => el.innerHTML = '', 5000);
+    }
+
+    // Auto-renew toggle
+    const toggle = document.getElementById('autoRenewToggle');
+    if (toggle) {
+      toggle.addEventListener('change', async () => {
+        try {
+          const resp = await fetch('/api/subscription/toggle-auto-renew', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+          const data = await resp.json();
+          showMsg('success', 'Auto-renewal ' + (data.auto_renew ? 'enabled' : 'disabled'));
+        } catch { showMsg('error', 'Failed to update auto-renewal'); }
+      });
+    }
+
+    // Cancel subscription
+    async function cancelSubscription() {
+      if (!confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your current billing period.')) return;
+      try {
+        const resp = await fetch('/api/subscription/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await resp.json();
+        if (data.success) {
+          showMsg('success', data.message);
+          setTimeout(() => location.reload(), 2000);
+        } else { showMsg('error', data.error || 'Failed to cancel'); }
+      } catch { showMsg('error', 'Network error'); }
+    }
+
+    // Profile update
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      try {
+        const resp = await fetch('/api/auth/account', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ full_name: form.get('full_name'), email: form.get('email') }),
+        });
+        const data = await resp.json();
+        if (data.success) showMsg('success', 'Profile updated');
+        else showMsg('error', data.error || 'Update failed');
+      } catch { showMsg('error', 'Network error'); }
+    });
+
+    // Password change
+    document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      try {
+        const resp = await fetch('/api/auth/change-password', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: form.get('current_password'), new_password: form.get('new_password') }),
+        });
+        const data = await resp.json();
+        if (data.success) { showMsg('success', 'Password updated'); e.target.reset(); }
+        else showMsg('error', data.error || 'Update failed');
+      } catch { showMsg('error', 'Network error'); }
+    });
+  </script>
+</body>
+</html>

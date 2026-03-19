@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up — iMedicalDoctor</title>
+  <style>
+    :root {
+      --bg: #efe8dc;
+      --panel: rgba(255, 250, 242, 0.9);
+      --ink: #1d2a2f;
+      --muted: #66757e;
+      --brand: #0f766e;
+      --brand-deep: #0b4f49;
+      --danger: #b42318;
+      --line: rgba(29, 42, 47, 0.12);
+      --shadow: 0 30px 70px rgba(30, 41, 46, 0.16);
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      min-height: 100vh; display: grid; place-items: center; padding: 24px;
+      font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15,118,110,0.18), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(180,35,24,0.1), transparent 18%),
+        linear-gradient(180deg, #f7f1e6 0%, var(--bg) 100%);
+    }
+    .shell {
+      width: min(980px, 100%); display: grid; grid-template-columns: 1.1fr 0.9fr;
+      border-radius: 30px; overflow: hidden;
+      box-shadow: var(--shadow); background: rgba(255,255,255,0.4);
+      border: 1px solid rgba(255,255,255,0.6); backdrop-filter: blur(16px);
+    }
+    @media (max-width: 700px) { .shell { grid-template-columns: 1fr; } .intro { display: none; } }
+    .intro {
+      padding: 48px;
+      background: linear-gradient(150deg, rgba(11,79,73,0.96), rgba(15,118,110,0.9));
+      color: #f8fafc; display: flex; flex-direction: column; justify-content: center;
+    }
+    .intro h1 { font-size: 32px; font-weight: 700; margin-bottom: 12px; }
+    .intro p { font-size: 16px; opacity: 0.85; line-height: 1.6; }
+    .intro .features { margin-top: 32px; list-style: none; padding: 0; }
+    .intro .features li { padding: 8px 0; font-size: 15px; opacity: 0.9; display: flex; align-items: center; gap: 10px; }
+    .intro .features li::before { content: "✓"; font-weight: 700; color: #34d399; font-size: 18px; }
+
+    .form-side { padding: 48px; background: var(--panel); }
+    .form-side h2 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+    .form-side .subtitle { color: var(--muted); margin-bottom: 28px; font-size: 14px; }
+    .form-side .subtitle a { color: var(--brand); text-decoration: none; font-weight: 600; }
+
+    .field { margin-bottom: 18px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field input {
+      width: 100%; padding: 12px 14px; font-size: 15px; border: 1.5px solid var(--line);
+      border-radius: 10px; background: #fff; transition: border-color 0.2s;
+    }
+    .field input:focus { outline: none; border-color: var(--brand); }
+
+    .error-msg {
+      background: rgba(180,35,24,0.08); color: var(--danger);
+      padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 18px;
+    }
+    .success-msg {
+      background: rgba(15,118,110,0.08); color: var(--brand);
+      padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 18px;
+    }
+
+    .btn {
+      width: 100%; padding: 14px; border: none; border-radius: 12px;
+      background: linear-gradient(135deg, var(--brand-deep), var(--brand));
+      color: #fff; font-size: 16px; font-weight: 700; cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(15,118,110,0.3); }
+
+    .password-strength { height: 4px; border-radius: 2px; margin-top: 6px; transition: all 0.3s; }
+    .strength-weak { background: var(--danger); width: 33%; }
+    .strength-medium { background: #f59e0b; width: 66%; }
+    .strength-strong { background: #10b981; width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="intro">
+      <h1>iMedicalDoctor</h1>
+      <p>Join thousands of medical professionals accessing premium study materials, question banks, and clinical references.</p>
+      <ul class="features">
+        <li>Comprehensive MCQ Question Banks</li>
+        <li>Clinical Reference Materials</li>
+        <li>Offline Access via Mobile App</li>
+        <li>Regular Content Updates</li>
+        <li>Multi-platform Access</li>
+      </ul>
+    </div>
+    <div class="form-side">
+      <h2>Create Account</h2>
+      <p class="subtitle">Create your account here, then complete subscription payment before app login.</p>
+
+      <% if (error) { %><div class="error-msg"><%= error %></div><% } %>
+      <% if (success) { %><div class="success-msg"><%= success %></div><% } %>
+
+      <form method="POST" action="/api/auth/register" id="signupForm">
+        <div class="field">
+          <label for="full_name">Full Name</label>
+          <input type="text" id="full_name" name="full_name" placeholder="Dr. John Smith" required>
+        </div>
+        <div class="field">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email" placeholder="doctor@hospital.com" required>
+        </div>
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" placeholder="johnsmith" minlength="3" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Min 8 chars, 1 uppercase, 1 number" minlength="8" required autocomplete="new-password">
+          <div class="password-strength" id="strengthBar"></div>
+        </div>
+        <div class="field">
+          <label for="confirm_password">Confirm Password</label>
+          <input type="password" id="confirm_password" name="confirm_password" placeholder="Repeat password" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const pw = document.getElementById('password');
+    const bar = document.getElementById('strengthBar');
+    pw.addEventListener('input', () => {
+      const v = pw.value;
+      bar.className = 'password-strength';
+      if (v.length >= 8 && /[A-Z]/.test(v) && /[0-9]/.test(v) && /[^A-Za-z0-9]/.test(v)) {
+        bar.classList.add('strength-strong');
+      } else if (v.length >= 8 && (/[A-Z]/.test(v) || /[0-9]/.test(v))) {
+        bar.classList.add('strength-medium');
+      } else if (v.length > 0) {
+        bar.classList.add('strength-weak');
+      }
+    });
+
+    document.getElementById('signupForm').addEventListener('submit', (e) => {
+      const pw1 = document.getElementById('password').value;
+      const pw2 = document.getElementById('confirm_password').value;
+      if (pw1 !== pw2) {
+        e.preventDefault();
+        alert('Passwords do not match');
+      }
+      if (pw1.length < 8 || !/[A-Z]/.test(pw1) || !/[0-9]/.test(pw1)) {
+        e.preventDefault();
+        alert('Password must be at least 8 characters with 1 uppercase letter and 1 number');
+      }
+    });
+  </script>
+</body>
+</html>

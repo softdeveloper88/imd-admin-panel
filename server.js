@@ -1063,7 +1063,7 @@ function getPackageInfo(pkgName) {
   const btConfigPath = path.join(pkgDir, 'BT_config.txt');
   if (fs.existsSync(btConfigPath)) {
     info.hasBtConfig = true;
-    info.hasDb = false; // override — no SQLite DB
+    if (!dbFile) info.hasDb = false; // override only when there's truly no SQLite DB
     info.type = 'guide';
     info.category = 'Clinical Guides';
     try {
@@ -1533,11 +1533,24 @@ app.get('/select-plan', async (req, res) => {
       ...p,
       features: (() => { try { return JSON.parse(p.features || '[]'); } catch { return []; } })(),
     }));
+
+    // Try to resolve logged-in user from cookie
+    let user = null;
+    const cookies = parseCookies(req.headers.cookie);
+    const userToken = cookies['imd_user_token'];
+    if (userToken) {
+      const [rows] = await pool.execute(
+        'SELECT s.user_id, u.username, u.full_name FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.is_active=1 AND s.expires_at > NOW()',
+        [userToken]
+      );
+      if (rows.length > 0) user = rows[0];
+    }
+
     res.render('select-plan', {
       plans: plansWithFeatures,
       stripeKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
       error: req.query.error || '',
-      user: null, // may or may not be logged in
+      user,
     });
   } catch (err) {
     console.error('Select plan error:', err.message);
@@ -1785,7 +1798,7 @@ app.get('/api/subscription/plans', async (req, res) => {
 });
 
 // POST /api/subscription/toggle-auto-renew
-app.post('/api/subscription/toggle-auto-renew', requireAppAuth, async (req, res) => {
+app.post('/api/subscription/toggle-auto-renew', requireUserAuth, async (req, res) => {
   try {
     const pool = await getMysqlPool();
     const [[user]] = await pool.execute('SELECT auto_renew, stripe_customer_id FROM users WHERE id=?', [req.appUser.user_id]);
@@ -1841,7 +1854,7 @@ app.post('/api/subscription/change-plan', requireAppAuth, async (req, res) => {
 });
 
 // POST /api/subscription/cancel
-app.post('/api/subscription/cancel', requireAppAuth, async (req, res) => {
+app.post('/api/subscription/cancel', requireUserAuth, async (req, res) => {
   try {
     const pool = await getMysqlPool();
     const [[user]] = await pool.execute('SELECT stripe_customer_id, subscription_expires FROM users WHERE id=?', [req.appUser.user_id]);
@@ -1887,7 +1900,7 @@ app.get('/api/subscription/history', requireAppAuth, async (req, res) => {
 });
 
 // PUT /api/auth/account — update profile
-app.put('/api/auth/account', requireAppAuth, async (req, res) => {
+app.put('/api/auth/account', requireUserAuth, async (req, res) => {
   const { full_name, email } = req.body || {};
   try {
     const pool = await getMysqlPool();
@@ -1917,7 +1930,7 @@ app.put('/api/auth/account', requireAppAuth, async (req, res) => {
 });
 
 // PUT /api/auth/change-password
-app.put('/api/auth/change-password', requireAppAuth, async (req, res) => {
+app.put('/api/auth/change-password', requireUserAuth, async (req, res) => {
   const { current_password, new_password } = req.body || {};
   if (!current_password || !new_password) return res.status(400).json({ error: 'Current and new password required' });
   if (String(new_password).length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
@@ -2385,6 +2398,306 @@ app.get('/api/auth/favorites', requireAppAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// TEST HISTORY endpoints
+// ══════════════════════════════════════════════════════════════════
+
+// POST /api/auth/test-history — save a completed test
+app.post('/api/auth/test-history', requireAppAuth, express.json(), async (req, res) => {
+  const { package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers } = req.body || {};
+  if (!package_name || total == null) return res.status(400).json({ error: 'package_name and total required' });
+  try {
+    const pool = await getMysqlPool();
+    const [result] = await pool.execute(
+      `INSERT INTO test_history (user_id, package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.appUser.user_id, package_name, score || 0, correct || 0, wrong || 0, unanswered || 0, total,
+       mode || 'Reading', JSON.stringify(question_ids || []), JSON.stringify(answers || {})]
+    );
+    res.json({ success: true, id: result.insertId });
+  } catch (err) {
+    console.error('test-history save error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/test-history/:packageName — all tests for a package
+app.get('/api/auth/test-history/:packageName', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT id, score, correct, wrong, unanswered, total, mode, created_at FROM test_history WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/test-history/:packageName/last — last test only
+app.get('/api/auth/test-history/:packageName/last', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT id, score, correct, wrong, unanswered, total, mode, question_ids, answers, created_at FROM test_history WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC LIMIT 1',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    res.json(rows.length > 0 ? rows[0] : null);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/auth/test-history/:packageName — reset all test history
+app.delete('/api/auth/test-history/:packageName', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'DELETE FROM test_history WHERE user_id = ? AND package_name = ?',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/progress/:packageName — aggregated progress
+app.get('/api/auth/progress/:packageName', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      `SELECT COUNT(*) as total_tests,
+              COALESCE(AVG(score), 0) as avg_score,
+              COALESCE(SUM(correct), 0) as total_correct,
+              COALESCE(SUM(wrong), 0) as total_wrong,
+              COALESCE(SUM(total), 0) as total_questions
+       FROM test_history WHERE user_id = ? AND package_name = ?`,
+      [req.appUser.user_id, req.params.packageName]
+    );
+    // Collect all unique question IDs ever attempted
+    const [qRows] = await pool.execute(
+      'SELECT question_ids FROM test_history WHERE user_id = ? AND package_name = ?',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    const usedSet = new Set();
+    for (const r of qRows) {
+      try { const ids = typeof r.question_ids === 'string' ? JSON.parse(r.question_ids) : (r.question_ids || []); ids.forEach(id => usedSet.add(id)); } catch (_) {}
+    }
+    res.json({ ...rows[0], unique_questions_used: usedSet.size });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// QUESTION FAVORITES endpoints
+// ══════════════════════════════════════════════════════════════════
+
+// POST /api/auth/question-favorites — toggle (add or remove)
+app.post('/api/auth/question-favorites', requireAppAuth, express.json(), async (req, res) => {
+  const { package_name, question_id } = req.body || {};
+  if (!package_name || question_id == null) return res.status(400).json({ error: 'package_name and question_id required' });
+  try {
+    const pool = await getMysqlPool();
+    // Check if already exists
+    const [existing] = await pool.execute(
+      'SELECT id FROM question_favorites WHERE user_id = ? AND package_name = ? AND question_id = ?',
+      [req.appUser.user_id, package_name, question_id]
+    );
+    if (existing.length > 0) {
+      await pool.execute('DELETE FROM question_favorites WHERE id = ?', [existing[0].id]);
+      res.json({ success: true, favorited: false });
+    } else {
+      await pool.execute(
+        'INSERT INTO question_favorites (user_id, package_name, question_id) VALUES (?, ?, ?)',
+        [req.appUser.user_id, package_name, question_id]
+      );
+      res.json({ success: true, favorited: true });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/question-favorites/:packageName — list favorited question IDs
+app.get('/api/auth/question-favorites/:packageName', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT question_id, created_at FROM question_favorites WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/auth/question-favorites/:packageName — delete all question favorites
+app.delete('/api/auth/question-favorites/:packageName', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'DELETE FROM question_favorites WHERE user_id = ? AND package_name = ?',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// BACKUP / RESTORE endpoints
+// ══════════════════════════════════════════════════════════════════
+
+// POST /api/auth/backup — create a backup, returns short code
+app.post('/api/auth/backup', requireAppAuth, express.json(), async (req, res) => {
+  const { package_name, local_favorite_ids, bookmarks, highlights } = req.body || {};
+  if (!package_name) return res.status(400).json({ error: 'package_name required' });
+  try {
+    const pool = await getMysqlPool();
+    // Gather test history
+    const [tests] = await pool.execute(
+      'SELECT score, correct, wrong, unanswered, total, mode, question_ids, answers, created_at FROM test_history WHERE user_id = ? AND package_name = ?',
+      [req.appUser.user_id, package_name]
+    );
+    // Use local favorites sent from client (stored locally on device)
+    const favoriteIds = Array.isArray(local_favorite_ids) ? local_favorite_ids : [];
+    const localBookmarks = Array.isArray(bookmarks) ? bookmarks : [];
+    const localHighlights = Array.isArray(highlights) ? highlights : [];
+    const data = {
+      test_history: tests,
+      local_favorite_ids: favoriteIds,
+      bookmarks: localBookmarks,
+      highlights: localHighlights,
+    };
+    // Generate unique 5-char code
+    let code;
+    for (let i = 0; i < 10; i++) {
+      code = crypto.randomBytes(3).toString('base64url').substring(0, 5).toUpperCase();
+      const [dup] = await pool.execute('SELECT id FROM backups WHERE backup_code = ?', [code]);
+      if (dup.length === 0) break;
+    }
+    await pool.execute(
+      'INSERT INTO backups (user_id, package_name, backup_code, data) VALUES (?, ?, ?, ?)',
+      [req.appUser.user_id, package_name, code, JSON.stringify(data)]
+    );
+    res.json({ success: true, backup_code: code });
+  } catch (err) {
+    console.error('backup error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/restore — restore from backup code
+app.post('/api/auth/restore', requireAppAuth, express.json(), async (req, res) => {
+  const { backup_code, package_name } = req.body || {};
+  if (!backup_code || !package_name) return res.status(400).json({ error: 'backup_code and package_name required' });
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT data FROM backups WHERE backup_code = ? AND package_name = ?',
+      [backup_code, package_name]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Backup not found' });
+
+    const data = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+    const userId = req.appUser.user_id;
+
+    // Clear existing data for this package
+    await pool.execute('DELETE FROM test_history WHERE user_id = ? AND package_name = ?', [userId, package_name]);
+    await pool.execute('DELETE FROM question_favorites WHERE user_id = ? AND package_name = ?', [userId, package_name]);
+
+    // Restore test history
+    if (data.test_history && data.test_history.length > 0) {
+      for (const t of data.test_history) {
+        // Convert ISO 8601 datetime to MySQL-compatible format
+        let createdAt = t.created_at;
+        if (typeof createdAt === 'string' && createdAt.includes('T')) {
+          createdAt = createdAt.replace('T', ' ').replace(/\.\d{3}Z$/, '');
+        }
+        await pool.execute(
+          `INSERT INTO test_history (user_id, package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [userId, package_name, t.score, t.correct, t.wrong, t.unanswered || 0, t.total, t.mode,
+           typeof t.question_ids === 'string' ? t.question_ids : JSON.stringify(t.question_ids || []),
+           typeof t.answers === 'string' ? t.answers : JSON.stringify(t.answers || {}),
+           createdAt]
+        );
+      }
+    }
+
+    // Return local favorite IDs from backup so client can restore locally
+    const favoriteIds = data.local_favorite_ids || [];
+    const restoredBookmarks = data.bookmarks || [];
+    const restoredHighlights = data.highlights || [];
+
+    res.json({
+      success: true,
+      tests_restored: (data.test_history || []).length,
+      favorites_restored: favoriteIds.length,
+      favorites_restored_ids: favoriteIds,
+      bookmarks: restoredBookmarks,
+      highlights: restoredHighlights,
+    });
+  } catch (err) {
+    console.error('restore error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/backups/:packageName — list all backups for a package
+app.get('/api/auth/backups/:packageName', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT id, backup_code, created_at FROM backups WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC',
+      [req.appUser.user_id, req.params.packageName]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/all-backups — get latest backup per package for auto-restore on new device
+app.get('/api/auth/all-backups', requireAppAuth, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      `SELECT b.id, b.package_name, b.backup_code, b.data, b.created_at
+       FROM backups b
+       INNER JOIN (
+         SELECT package_name, MAX(created_at) AS max_created
+         FROM backups WHERE user_id = ?
+         GROUP BY package_name
+       ) latest ON b.package_name = latest.package_name AND b.created_at = latest.max_created
+       WHERE b.user_id = ?
+       ORDER BY b.created_at DESC`,
+      [req.appUser.user_id, req.appUser.user_id]
+    );
+    const backups = rows.map(r => {
+      const data = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+      return {
+        package_name: r.package_name,
+        backup_code: r.backup_code,
+        created_at: r.created_at,
+        test_count: (data.test_history || []).length,
+        favorites_count: (data.local_favorite_ids || []).length,
+        bookmarks_count: (data.bookmarks || []).length,
+        highlights_count: (data.highlights || []).length,
+      };
+    });
+    res.json({ backups });
+  } catch (err) {
+    console.error('all-backups error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

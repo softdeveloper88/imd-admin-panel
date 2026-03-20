@@ -1,7 +1,6 @@
 -- iMD App Schema Migration v4
 -- Adds: test_history, question_favorites, backups
-
-USE imd_app;
+-- Note: Select the correct database in phpMyAdmin before importing.
 
 -- ─── Test history (one row per completed test) ───
 CREATE TABLE IF NOT EXISTS test_history (

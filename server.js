@@ -3208,6 +3208,10 @@ app.get('/api/packages/:name/bt-html/:filename', (req, res) => {
   if (!filename || filename.startsWith('.')) return res.status(400).json({ error: 'Invalid filename' });
   const filePath = path.join(pkg.path, filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found: ' + filename });
+  // Set correct content-type for common extensions
+  const ext = path.extname(filename).toLowerCase();
+  const mimeMap = { '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif' };
+  if (mimeMap[ext]) res.type(mimeMap[ext]);
   res.sendFile(filePath);
 });
 

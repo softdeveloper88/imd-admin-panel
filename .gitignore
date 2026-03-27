@@ -1,8 +1,10 @@
 node_modules/
 package-lock.json
 admin-settings.json
-content/
-uploads/
+content/*
+!content/.gitkeep
+uploads/*
+!uploads/.gitkeep
 .DS_Store
 *.DS_Store
 .env

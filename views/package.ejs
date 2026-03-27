@@ -17,7 +17,7 @@
     .nav-chip { padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); font-size: 12px; }
     .nav-link, .nav-button { color: white; text-decoration: none; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.1); border-radius: 999px; padding: 10px 14px; font-size: 13px; cursor: pointer; }
     .nav-form { margin: 0; }
-    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
     .package-status { margin-bottom: 20px; padding: 14px 18px; border-radius: 12px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .status-pill { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
     .status-pill.ready { color: #067647; background: #ecfdf3; }
@@ -77,13 +77,15 @@
     .reference-link.active { background: #eef5ff; border-left-color: #1a73e8; color: #174ea6; font-weight: 600; }
     .reference-docs { border-top: 1px solid #edf0f5; }
     .reference-docs .reference-link { font-size: 13px; }
-    .reference-reader { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow: hidden; }
+    .reference-reader { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); overflow: hidden; min-width: 0; }
     .reference-reader-header { padding: 18px 22px; border-bottom: 1px solid #edf0f5; background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%); }
     .reference-reader-header h2 { font-size: 20px; color: #163a6b; }
     .reference-reader-header p { margin-top: 6px; font-size: 12px; color: #667085; text-transform: uppercase; letter-spacing: 0.08em; }
-    .reference-reader-body { padding: 24px; line-height: 1.75; font-size: 15px; color: #243b53; }
-    .reference-reader-body img, .reference-reader-body svg, .reference-reader-body video, .reference-reader-body iframe { max-width: 100%; height: auto; }
+    .reference-reader-body { padding: 0; line-height: 1.75; font-size: 15px; color: #243b53; overflow: hidden; }
+    .reference-reader-body .reference-iframe { width: 100%; border: none; min-height: 70vh; display: block; }
+    .reference-reader-body img, .reference-reader-body svg, .reference-reader-body video, .reference-reader-body iframe:not(.reference-iframe) { max-width: 100%; height: auto; }
     .reference-reader-body table { max-width: 100%; display: block; overflow-x: auto; }
+    .reference-reader-body pre { white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
     .reference-empty { padding: 48px 24px; text-align: center; color: #667085; }
     .reference-level-1 { padding-left: 28px; }
     .reference-level-2 { padding-left: 40px; }
@@ -251,7 +253,9 @@
                 <h2><%= referenceContentTitle %></h2>
                 <p><%= referenceContentTable %> table</p>
               </div>
-              <div class="reference-reader-body"><%- referenceContentHtml %></div>
+              <div class="reference-reader-body">
+                <iframe id="reference-iframe" class="reference-iframe" src="/api/packages/<%= pkg.name %>/render-html/<%= selectedDocId %>" frameborder="0"></iframe>
+              </div>
             <% } else { %>
               <div class="reference-empty">No readable HTML content was found for the selected document.</div>
             <% } %>
@@ -531,6 +535,20 @@
       } catch (e) {
         tv.innerHTML = '<div style="color:red; padding:20px;">Failed to load table data</div>';
       }
+    }
+    // ---- Reference iframe auto-resize ----
+    const refIframe = document.getElementById('reference-iframe');
+    if (refIframe) {
+      refIframe.addEventListener('load', function() {
+        try {
+          const body = refIframe.contentDocument.body;
+          const html = refIframe.contentDocument.documentElement;
+          const height = Math.max(body.scrollHeight, body.offsetHeight, html.scrollHeight, html.offsetHeight);
+          refIframe.style.height = Math.max(height + 40, 400) + 'px';
+        } catch(e) {
+          refIframe.style.height = '80vh';
+        }
+      });
     }
   </script>
 </body>

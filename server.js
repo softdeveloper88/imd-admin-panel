@@ -2866,6 +2866,32 @@ app.get('/api/packages/:name/render/:id', (req, res) => {
   res.json({ id: content.id, title: content.title, html: rewritten });
 });
 
+// Serve reference content as a full HTML page for iframe embedding
+app.get('/api/packages/:name/render-html/:id', (req, res) => {
+  const pkg = getPackageInfo(req.params.name);
+  if (!pkg || !pkg.hasDb) return res.status(404).send('No database');
+
+  const db = openDb(path.join(pkg.path, pkg.dbFile));
+  const content = getReferenceContent(db, parseInt(req.params.id));
+  db.close();
+
+  if (!content) return res.status(404).send('Content not found');
+
+  const rewritten = rewritePackageHtml(content.html, pkg.name, content.path);
+  const fullPage = `<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.75; color: #243b53; word-break: break-word; }
+img, svg, video { max-width: 100%; height: auto; }
+table { max-width: 100%; overflow-x: auto; display: block; }
+pre { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head><body>${rewritten}</body></html>`;
+  res.type('html').send(fullPage);
+});
+
 // TOC with decrypted titles — used by Flutter for proper navigation ordering
 app.get('/api/packages/:name/toc-nav', (req, res) => {
   const pkg = getPackageInfo(req.params.name);

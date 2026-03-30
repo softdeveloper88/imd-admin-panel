@@ -2408,15 +2408,19 @@ app.get('/api/auth/favorites', requireAppAuth, async (req, res) => {
 
 // POST /api/auth/test-history — save a completed test
 app.post('/api/auth/test-history', requireAppAuth, express.json(), async (req, res) => {
-  const { package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers } = req.body || {};
+  const { package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers,
+          subject_label, system_label, total_time_secs, question_times, done } = req.body || {};
   if (!package_name || total == null) return res.status(400).json({ error: 'package_name and total required' });
   try {
     const pool = await getMysqlPool();
     const [result] = await pool.execute(
-      `INSERT INTO test_history (user_id, package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO test_history (user_id, package_name, score, correct, wrong, unanswered, total, mode, question_ids, answers,
+        subject_label, system_label, total_time_secs, question_times, done)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.appUser.user_id, package_name, score || 0, correct || 0, wrong || 0, unanswered || 0, total,
-       mode || 'Reading', JSON.stringify(question_ids || []), JSON.stringify(answers || {})]
+       mode || 'Reading', JSON.stringify(question_ids || []), JSON.stringify(answers || {}),
+       subject_label || null, system_label || null, total_time_secs || 0,
+       JSON.stringify(question_times || {}), done === false ? 0 : 1]
     );
     res.json({ success: true, id: result.insertId });
   } catch (err) {
@@ -2430,10 +2434,17 @@ app.get('/api/auth/test-history/:packageName', requireAppAuth, async (req, res) 
   try {
     const pool = await getMysqlPool();
     const [rows] = await pool.execute(
-      'SELECT id, score, correct, wrong, unanswered, total, mode, created_at FROM test_history WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC',
+      'SELECT id, score, correct, wrong, unanswered, total, mode, question_ids, answers, subject_label, system_label, total_time_secs, question_times, done, created_at FROM test_history WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC',
       [req.appUser.user_id, req.params.packageName]
     );
-    res.json(rows);
+    // Parse JSON fields
+    const parsed = rows.map(r => ({
+      ...r,
+      question_ids: typeof r.question_ids === 'string' ? JSON.parse(r.question_ids) : (r.question_ids || []),
+      answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : (r.answers || {}),
+      question_times: typeof r.question_times === 'string' ? JSON.parse(r.question_times) : (r.question_times || {}),
+    }));
+    res.json(parsed);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -2444,10 +2455,17 @@ app.get('/api/auth/test-history/:packageName/last', requireAppAuth, async (req, 
   try {
     const pool = await getMysqlPool();
     const [rows] = await pool.execute(
-      'SELECT id, score, correct, wrong, unanswered, total, mode, question_ids, answers, created_at FROM test_history WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC LIMIT 1',
+      'SELECT id, score, correct, wrong, unanswered, total, mode, question_ids, answers, subject_label, system_label, total_time_secs, question_times, done, created_at FROM test_history WHERE user_id = ? AND package_name = ? ORDER BY created_at DESC LIMIT 1',
       [req.appUser.user_id, req.params.packageName]
     );
-    res.json(rows.length > 0 ? rows[0] : null);
+    if (rows.length === 0) return res.json(null);
+    const r = rows[0];
+    res.json({
+      ...r,
+      question_ids: typeof r.question_ids === 'string' ? JSON.parse(r.question_ids) : (r.question_ids || []),
+      answers: typeof r.answers === 'string' ? JSON.parse(r.answers) : (r.answers || {}),
+      question_times: typeof r.question_times === 'string' ? JSON.parse(r.question_times) : (r.question_times || {}),
+    });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }

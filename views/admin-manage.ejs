@@ -17,19 +17,50 @@
     body { font-family: "Avenir Next","Helvetica Neue","Segoe UI",sans-serif; color: var(--ink);
       background: radial-gradient(circle at top left,rgba(15,118,110,0.14),transparent 26%),
       radial-gradient(circle at top right,rgba(217,119,6,0.12),transparent 20%),
-      linear-gradient(180deg,#f8f2e8 0%,var(--bg) 100%); min-height: 100vh; }
+      linear-gradient(180deg,#f8f2e8 0%,var(--bg) 100%); min-height: 100vh; display: flex; }
     a { color: var(--brand); text-decoration: none; }
-    .page { max-width: 1440px; margin: 0 auto; padding: 20px; }
 
-    /* Top bar */
-    .topbar { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; margin-bottom: 20px;
-      border-radius: 20px; background: linear-gradient(135deg,rgba(12,58,69,0.96),rgba(22,90,84,0.88));
-      color: #f9fafb; box-shadow: var(--shadow); }
-    .topbar h1 { font-size: 24px; font-weight: 700; }
-    .topbar-actions { display: flex; gap: 10px; align-items: center; }
-    .topbar-actions a { color: rgba(255,255,255,0.8); font-size: 14px; padding: 8px 16px; border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.2); transition: all 0.2s; }
-    .topbar-actions a:hover { background: rgba(255,255,255,0.15); color: #fff; }
+    /* Sidebar */
+    .sidebar{width:250px;min-height:100vh;background:linear-gradient(180deg,rgba(12,58,69,0.97),rgba(22,90,84,0.93));color:#f9fafb;padding:0;flex-shrink:0;position:fixed;left:0;top:0;bottom:0;z-index:100;transition:transform .2s}
+    .sidebar-header{padding:20px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1)}
+    .logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}
+    .logo-icon{font-size:24px}
+    .sidebar-toggle{background:none;border:none;color:#f9fafb;font-size:20px;cursor:pointer;padding:4px 8px}
+    .sidebar-menu{padding:12px 0}
+    .menu-section{margin-bottom:8px}
+    .menu-label{padding:8px 20px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.5}
+    .menu-item{display:flex;align-items:center;gap:10px;padding:10px 20px;text-decoration:none;color:rgba(255,255,255,.7);font-size:14px;transition:all .15s}
+    .menu-item:hover{background:rgba(255,255,255,.08);color:#fff}
+    .menu-item.active{background:rgba(255,255,255,.12);color:#fff;border-left:3px solid #5eead4}
+    .menu-icon{font-size:16px;width:22px;text-align:center}
+    .collapsed .sidebar{transform:translateX(-250px)}
+    .collapsed .main-content{margin-left:0}
+    .main-content{margin-left:250px;flex:1;min-width:0}
+
+    /* Header */
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;background:var(--panel);border-bottom:1px solid var(--line)}
+    .topbar-left{display:flex;align-items:center;gap:12px}
+    .topbar-right{display:flex;align-items:center;gap:16px}
+    .breadcrumbs{font-size:14px;color:var(--muted)}
+    .breadcrumbs a{color:var(--brand);text-decoration:none}
+    .mobile-toggle{display:none;background:none;border:none;font-size:20px;cursor:pointer}
+    .btn-logout-sm{background:none;border:1px solid var(--line);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted)}
+    .btn-logout-sm:hover{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
+    .admin-name{font-size:13px;color:var(--muted)}
+    .notif-bell{cursor:pointer;font-size:18px;position:relative}
+    .notif-count{position:absolute;top:-6px;right:-8px;background:var(--danger);color:#fff;font-size:10px;padding:1px 5px;border-radius:99px}
+    .notif-dropdown{position:absolute;right:80px;top:52px;width:340px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:200;max-height:400px;overflow:auto}
+    .notif-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .notif-mark-all{background:none;border:none;color:var(--brand);cursor:pointer;font-size:12px}
+    .notif-item{padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer}
+    .notif-item.unread{background:#f0fdf4}
+    .notif-title{font-size:13px;font-weight:600}
+    .notif-msg{font-size:12px;color:var(--muted);margin-top:2px}
+    .notif-time{font-size:11px;color:var(--muted);margin-top:4px}
+
+    /* Page */
+    .page-content { padding: 28px; }
+    .page { max-width: 1440px; margin: 0; padding: 0; }
 
     /* Stats row */
     .stats { display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap: 14px; margin-bottom: 20px; }
@@ -95,6 +126,12 @@
     .modal h3 { margin-bottom: 16px; }
 
     /* Responsive */
+    @media (max-width: 900px) {
+      .sidebar { transform: translateX(-250px); }
+      .main-content { margin-left: 0; }
+      .sidebar.show { transform: translateX(0); }
+      .mobile-toggle { display: block; }
+    }
     @media (max-width: 768px) {
       .stats { grid-template-columns: repeat(2, 1fr); }
       .tab-nav { overflow-x: auto; flex-wrap: nowrap; }
@@ -108,17 +145,11 @@
   </style>
 </head>
 <body>
-<div class="page">
-  <!-- Top bar -->
-  <div class="topbar">
-    <div>
-      <h1>⚙ Admin Panel</h1>
-    </div>
-    <div class="topbar-actions">
-      <a href="/dashboard">← Content Dashboard</a>
-      <a href="/logout" style="border-color:rgba(255,100,100,0.3);color:rgba(255,200,200,0.9);">Logout</a>
-    </div>
-  </div>
+<%- include('partials/sidebar', { activePage: 'manage' }) %>
+<div class="main-content">
+  <%- include('partials/header', { breadcrumb: 'Admin Panel', currentAdminUser: typeof currentAdminUser !== 'undefined' ? currentAdminUser : 'Admin' }) %>
+  <div class="page-content">
+  <div class="page">
 
   <!-- Stats -->
   <div class="stats" id="statsRow">
@@ -658,6 +689,9 @@ function esc(s) { const d = document.createElement('div'); d.textContent = Strin
 
 // ── Load all data on page load ──
 Promise.all([loadAnalytics(), loadUsers(), loadPlans(), loadAccess(), loadTabs(), loadCategories(), loadLogs()]);
+function toggleSidebar(){document.body.classList.toggle('collapsed');const sb=document.querySelector('.sidebar');sb&&sb.classList.toggle('show')}
 </script>
+  </div>
+</div>
 </body>
 </html>

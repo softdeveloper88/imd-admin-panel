@@ -24,11 +24,14 @@
       <a href="/admin/subscriptions" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'subscriptions' ? 'active' : '' %>">
         <span class="menu-icon">💳</span><span class="menu-text">Subscriptions</span>
       </a>
+      <a href="/admin/tokens" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'tokens' ? 'active' : '' %>">
+        <span class="menu-icon">🎟️</span><span class="menu-text">Tokens</span>
+      </a>
     </div>
     <div class="menu-section">
-      <div class="menu-label">Insights</div>
-      <a href="/admin/analytics" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'analytics' ? 'active' : '' %>">
-        <span class="menu-icon">📈</span><span class="menu-text">Analytics</span>
+      <div class="menu-label">Content</div>
+      <a href="/admin/cme" class="menu-item <%= typeof activePage !== 'undefined' && activePage === 'cme' ? 'active' : '' %>">
+        <span class="menu-icon">🎬</span><span class="menu-text">CME Videos</span>
       </a>
     </div>
     <div class="menu-section">

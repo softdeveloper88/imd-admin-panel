@@ -95,12 +95,17 @@
     </div>
     <div class="form-side">
       <h2>Create Account</h2>
-      <p class="subtitle">Create your account here, then complete subscription payment before app login.</p>
+      <p class="subtitle">Enter your access token to create your account.</p>
 
       <% if (error) { %><div class="error-msg"><%= error %></div><% } %>
       <% if (success) { %><div class="success-msg"><%= success %></div><% } %>
 
-      <form method="POST" action="/api/auth/register" id="signupForm">
+      <form method="POST" action="/api/auth/register-with-token" id="signupForm">
+        <div class="field" style="background:rgba(15,118,110,0.04);padding:14px;border-radius:12px;border:1.5px dashed rgba(15,118,110,0.3);margin-bottom:20px">
+          <label for="token_code" style="color:var(--brand)">Access Token Code *</label>
+          <input type="text" id="token_code" name="token_code" placeholder="e.g. a1b2c3d4-e5f6-7890-abcd-ef1234567890" style="font-family:monospace" required>
+          <p style="font-size:11px;color:var(--muted);margin-top:4px">A valid access token is required to create an account.</p>
+        </div>
         <div class="field">
           <label for="full_name">Full Name</label>
           <input type="text" id="full_name" name="full_name" placeholder="Dr. John Smith" required>
@@ -148,10 +153,18 @@
       if (pw1 !== pw2) {
         e.preventDefault();
         alert('Passwords do not match');
+        return;
       }
       if (pw1.length < 8 || !/[A-Z]/.test(pw1) || !/[0-9]/.test(pw1)) {
         e.preventDefault();
         alert('Password must be at least 8 characters with 1 uppercase letter and 1 number');
+        return;
+      }
+      const tokenCode = document.getElementById('token_code').value.trim();
+      if (!tokenCode) {
+        e.preventDefault();
+        alert('Access token code is required');
+        return;
       }
     });
   </script>

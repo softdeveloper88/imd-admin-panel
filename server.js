@@ -925,7 +925,7 @@ function wantsHtmlResponse(req) {
 function buildUploadRedirectUrl(message, isError) {
   const params = new URLSearchParams();
   params.set(isError ? 'uploadError' : 'uploadSuccess', message);
-  return `/dashboard?${params.toString()}`;
+  return `/admin/content?${params.toString()}`;
 }
 
 function respondUploadOutcome(req, res, statusCode, message, isError) {
@@ -944,7 +944,7 @@ function respondDashboardSettings(req, res, statusCode, message, isError) {
   if (wantsHtmlResponse(req)) {
     const params = new URLSearchParams();
     params.set(isError ? 'settingsError' : 'settingsSuccess', message);
-    return res.redirect(`/dashboard?${params.toString()}`);
+    return res.redirect(`/admin/content?${params.toString()}`);
   }
 
   if (isError) {
@@ -1209,7 +1209,7 @@ function buildDashboardHref(currentFilters, updates = {}) {
   if (merged.pageSize && merged.pageSize !== 10) params.set('pageSize', String(merged.pageSize));
 
   const queryString = params.toString();
-  return queryString ? `/dashboard?${queryString}` : '/dashboard';
+  return queryString ? `/admin/content?${queryString}` : '/admin/content';
 }
 
 function buildDashboardModel(query = {}) {
@@ -1274,13 +1274,25 @@ function renderDashboard(req, res, overrides = {}) {
   });
 }
 
+function renderContent(req, res, overrides = {}) {
+  const dashboardModel = buildDashboardModel(req.query);
+  res.render('content', {
+    ...dashboardModel,
+    buildDashboardHref: updates => buildDashboardHref(dashboardModel.dashboardFilters, updates),
+    uploadError: overrides.uploadError ?? req.query.uploadError ?? '',
+    uploadSuccess: overrides.uploadSuccess ?? req.query.uploadSuccess ?? '',
+    settingsError: overrides.settingsError ?? req.query.settingsError ?? '',
+    settingsSuccess: overrides.settingsSuccess ?? req.query.settingsSuccess ?? '',
+  });
+}
+
 // ----- Admin routes -----
 app.get('/', (req, res) => {
   res.redirect(req.admin ? '/dashboard' : '/login');
 });
 
 app.get('/upload', (req, res) => {
-  res.redirect(req.admin ? '/dashboard' : '/login?next=%2Fdashboard');
+  res.redirect(req.admin ? '/admin/content' : '/login?next=%2Fadmin%2Fcontent');
 });
 
 app.get('/login', (req, res) => {
@@ -1354,7 +1366,7 @@ async function requireUserAuth(req, res, next) {
   try {
     const pool = await getMysqlPool();
     const [rows] = await pool.execute(
-      'SELECT s.id AS session_id, s.user_id, u.username, u.email, u.full_name, u.subscription_type, u.subscription_expires, u.subscription_status, u.auto_renew, u.stripe_customer_id FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.is_active=1 AND s.expires_at > NOW()',
+      'SELECT s.id AS session_id, s.user_id, u.username, u.email, u.full_name, u.subscription_type, u.subscription_expires, u.subscription_status, u.auto_renew, u.stripe_customer_id, u.valid_until, u.account_status, u.active_token_id FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.is_active=1 AND s.expires_at > NOW()',
       [userToken]
     );
     if (rows.length === 0) {
@@ -1409,118 +1421,23 @@ app.get('/signup', (req, res) => {
   });
 });
 
-// POST /api/auth/register
-app.post('/api/auth/register', async (req, res) => {
-  if (!wantsHtmlResponse(req)) {
-    return res.status(403).json({
-      error: 'Signup is only available on the web portal. Please complete subscription payment before login.',
-      signup_url: `${BASE_URL}/signup`,
-    });
-  }
-
-  const { full_name, email, username, password, confirm_password, device_id } = req.body || {};
-
-  // Validation
-  if (!username || !password || !email) {
-    const err = 'Username, email, and password are required';
+// POST /api/auth/register — Token is now mandatory; redirect to token-based registration
+app.post('/api/auth/register', async (req, res, next) => {
+  const { token_code } = req.body || {};
+  if (!token_code) {
+    const err = 'An access token is required to create an account';
     if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
     return res.status(400).json({ error: err });
   }
-  if (String(username).trim().length < 3) {
-    const err = 'Username must be at least 3 characters';
-    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-    return res.status(400).json({ error: err });
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
-    const err = 'Please enter a valid email address';
-    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-    return res.status(400).json({ error: err });
-  }
-  if (String(password).length < 8) {
-    const err = 'Password must be at least 8 characters';
-    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-    return res.status(400).json({ error: err });
-  }
-  if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-    const err = 'Password must include at least 1 uppercase letter and 1 number';
-    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-    return res.status(400).json({ error: err });
-  }
-  if (confirm_password !== undefined && password !== confirm_password) {
-    const err = 'Passwords do not match';
-    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-    return res.status(400).json({ error: err });
-  }
-
-  try {
-    const pool = await getMysqlPool();
-    const cleanUsername = String(username).trim().toLowerCase();
-    const cleanEmail = String(email).trim().toLowerCase();
-    const cleanName = String(full_name || '').trim();
-
-    // Check uniqueness
-    const [existing] = await pool.execute(
-      'SELECT id FROM users WHERE username=? OR email=?',
-      [cleanUsername, cleanEmail]
-    );
-    if (existing.length > 0) {
-      const err = 'Username or email already exists';
-      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-      return res.status(409).json({ error: err });
-    }
-
-    // Hash password
-    const { salt, hash } = hashUserPassword(password);
-
-    // Insert user
-    const [result] = await pool.execute(
-      'INSERT INTO users (username, email, full_name, password_salt, password_hash, subscription_type, subscription_status) VALUES (?,?,?,?,?,?,?)',
-      [cleanUsername, cleanEmail, cleanName || null, salt, hash, 'free', 'active']
-    );
-    const userId = result.insertId;
-
-    // Create session
-    const token = generateToken();
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    await pool.execute(
-      'INSERT INTO sessions (user_id, token, device_id, expires_at, is_active) VALUES (?,?,?,?,1)',
-      [userId, token, device_id || null, expiresAt]
-    );
-
-    // Admin notification
-    await pool.execute(
-      'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
-      ['new_user', 'New User Signup', `${cleanUsername} (${cleanEmail}) registered`, JSON.stringify({ user_id: userId, username: cleanUsername })]
-    );
-
-    // For web requests, set cookie and redirect to plan selection
-    if (wantsHtmlResponse(req)) {
-      res.cookie('imd_user_token', token, {
-        httpOnly: true, sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
-      });
-      return res.redirect('/select-plan');
-    }
-
-    // For API requests, return token
-    res.status(201).json({
-      token,
-      expires_at: expiresAt.toISOString(),
-      user: { id: userId, username: cleanUsername, email: cleanEmail, full_name: cleanName, subscription_type: 'free' },
-    });
-  } catch (err) {
-    console.error('Registration error:', err.message);
-    if (wantsHtmlResponse(req)) return res.render('signup', { error: 'Registration failed. Please try again.', success: '' });
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  // Delegate to the token registration handler
+  req.url = '/api/auth/register-with-token';
+  next('route');
 });
 
-// POST /signup (web form)
+// POST /signup (web form) — always routes to token-based registration
 app.post('/signup', (req, res, next) => {
-  // Delegate to the API handler
   req.headers['accept'] = 'text/html';
-  app.handle(Object.assign(req, { url: '/api/auth/register', method: 'POST' }), res, next);
+  app.handle(Object.assign(req, { url: '/api/auth/register-with-token', method: 'POST' }), res, next);
 });
 
 // GET /select-plan
@@ -1993,7 +1910,7 @@ app.post('/settings/credentials', requireAdmin, (req, res) => {
 });
 
 app.get('/dashboard', requireAdmin, (req, res) => {
-  renderDashboard(req, res);
+  res.render('dashboard', { currentAdminUser: getAdminSettings().username });
 });
 
 app.get('/admin/manage', requireAdmin, (req, res) => {
@@ -2193,7 +2110,7 @@ app.post('/delete/:name', requireAdmin, (req, res) => {
   const pkgDir = path.join(CONTENT_DIR, req.params.name);
   if (!path.resolve(pkgDir).startsWith(path.resolve(CONTENT_DIR))) return res.status(400).json({ error: 'Invalid' });
   if (fs.existsSync(pkgDir)) fs.rmSync(pkgDir, { recursive: true });
-  res.redirect('/dashboard');
+  res.redirect('/admin/content');
 });
 
 // ----- MySQL User Auth -----
@@ -2247,7 +2164,7 @@ async function requireAppAuth(req, res, next) {
   try {
     const pool = await getMysqlPool();
     const [rows] = await pool.execute(
-      'SELECT s.id AS session_id, s.user_id, s.device_id, u.username, u.subscription_type, u.subscription_expires, COALESCE(sp.access_level, 1) AS access_level FROM sessions s JOIN users u ON s.user_id = u.id LEFT JOIN subscription_plans sp ON sp.name = u.subscription_type WHERE s.token = ? AND s.is_active = 1 AND s.expires_at > NOW()',
+      'SELECT s.id AS session_id, s.user_id, s.device_id, u.username, u.subscription_type, u.subscription_expires, u.valid_until, u.account_status, u.active_token_id, COALESCE(sp.access_level, 1) AS access_level FROM sessions s JOIN users u ON s.user_id = u.id LEFT JOIN subscription_plans sp ON sp.name = u.subscription_type WHERE s.token = ? AND s.is_active = 1 AND s.expires_at > NOW()',
       [token]
     );
     if (rows.length === 0) {
@@ -2278,10 +2195,13 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    if (!hasActivePaidSubscription(user)) {
+    // Check token-based access OR Stripe-based subscription
+    const hasTokenAccess = user.valid_until && new Date(user.valid_until) > new Date() && user.account_status === 'active';
+    if (!hasTokenAccess && !hasActivePaidSubscription(user)) {
       return res.status(402).json({
-        error: 'Active paid subscription required. Please sign up and complete payment on the web portal before login.',
+        error: 'Active subscription required. Please sign up and complete payment or use a valid token.',
         requires_subscription: true,
+        renewal_required: true,
         signup_url: `${BASE_URL}/signup`,
       });
     }
@@ -2305,12 +2225,15 @@ app.post('/api/auth/login', express.json(), async (req, res) => {
     res.json({
       token,
       expires_at: expiresAt.toISOString(),
+      valid_until: user.valid_until ? new Date(user.valid_until).toISOString() : null,
       user: {
         id: user.id,
         username: user.username,
         subscription_type: user.subscription_type,
         subscription_expires: user.subscription_expires,
         access_level: accessLevel,
+        valid_until: user.valid_until ? new Date(user.valid_until).toISOString() : null,
+        account_status: user.account_status || 'active',
       },
     });
   } catch (err) {
@@ -2341,6 +2264,8 @@ app.get('/api/auth/verify', requireAppAuth, (req, res) => {
       subscription_type: req.appUser.subscription_type,
       subscription_expires: req.appUser.subscription_expires,
       access_level: req.appUser.access_level ?? 1,
+      valid_until: req.appUser.valid_until || null,
+      account_status: req.appUser.account_status || 'active',
     },
   });
 });
@@ -2355,6 +2280,8 @@ app.get('/api/auth/account', requireAppAuth, (req, res) => {
     subscription_expires: u.subscription_expires,
     access_level: u.access_level ?? 1,
     device_id: u.device_id,
+    valid_until: u.valid_until || null,
+    account_status: u.account_status || 'active',
   });
 });
 
@@ -3191,7 +3118,7 @@ app.get('/api/packages/:name/create-test', (req, res) => {
   res.json({ questionIds: rows.map(r => r.id), count: rows.length });
 });
 
-app.get('/api/packages/:name/download', (req, res) => {
+app.get('/api/packages/:name/download', requireAppAuth, (req, res) => {
   const pkg = getPackageInfo(req.params.name);
   if (!pkg) return res.status(404).json({ error: 'Not found' });
   const zip = new AdmZip();
@@ -4006,11 +3933,11 @@ app.get('/admin/subscriptions', requireAdmin, (req, res) => {
 });
 
 app.get('/admin/content', requireAdmin, (req, res) => {
-  res.redirect('/dashboard');
+  renderContent(req, res);
 });
 
 app.get('/admin/analytics', requireAdmin, (req, res) => {
-  res.render('analytics', { currentAdminUser: getAdminSettings().username });
+  res.redirect('/dashboard');
 });
 
 app.get('/admin/settings', requireAdmin, (req, res) => {
@@ -4029,10 +3956,823 @@ app.post('/api/admin/sessions/expire-all', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── CME Video Management ───
+
+// GET /api/cme/videos - List all CME videos (public, for mobile app)
+app.get('/api/cme/videos', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(
+      'SELECT * FROM cme_videos WHERE is_active = 1 ORDER BY created_at DESC'
+    );
+    res.json(rows);
+  } catch (err) {
+    // Table may not exist yet
+    res.json([]);
+  }
+});
+
+// GET /admin/cme - CME video management page
+app.get('/admin/cme', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    // Auto-create table if not exists
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS cme_videos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(500) NOT NULL,
+        description TEXT,
+        video_url VARCHAR(2000) NOT NULL,
+        thumbnail_url VARCHAR(2000),
+        duration INT DEFAULT 0,
+        category VARCHAR(255) DEFAULT 'General',
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    const [videos] = await pool.execute('SELECT * FROM cme_videos ORDER BY created_at DESC');
+    res.render('cme', { videos, activePage: 'cme', currentAdminUser: getAdminSettings().username });
+  } catch (err) {
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
+// POST /api/admin/cme/videos - Add a CME video
+app.post('/api/admin/cme/videos', requireAdmin, async (req, res) => {
+  try {
+    const { title, description, video_url, thumbnail_url, duration, category } = req.body;
+    if (!title || !video_url) return res.status(400).json({ error: 'Title and video URL are required' });
+    const pool = await getMysqlPool();
+    const [result] = await pool.execute(
+      'INSERT INTO cme_videos (title, description, video_url, thumbnail_url, duration, category) VALUES (?,?,?,?,?,?)',
+      [title, description || null, video_url, thumbnail_url || null, parseInt(duration) || 0, category || 'General']
+    );
+    await logAdminAction(getAdminSettings().username, 'add_cme_video', 'cme_videos', result.insertId, null, req.ip);
+    res.json({ success: true, id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/cme/videos/:id - Update a CME video
+app.put('/api/admin/cme/videos/:id', requireAdmin, async (req, res) => {
+  try {
+    const { title, description, video_url, thumbnail_url, duration, category, is_active } = req.body;
+    const pool = await getMysqlPool();
+    await pool.execute(
+      'UPDATE cme_videos SET title=?, description=?, video_url=?, thumbnail_url=?, duration=?, category=?, is_active=? WHERE id=?',
+      [title, description || null, video_url, thumbnail_url || null, parseInt(duration) || 0, category || 'General', is_active ? 1 : 0, req.params.id]
+    );
+    await logAdminAction(getAdminSettings().username, 'update_cme_video', 'cme_videos', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/cme/videos/:id - Delete a CME video
+app.delete('/api/admin/cme/videos/:id', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute('DELETE FROM cme_videos WHERE id=?', [req.params.id]);
+    await logAdminAction(getAdminSettings().username, 'delete_cme_video', 'cme_videos', req.params.id, null, req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── App Version Endpoint ───
+
+// GET /api/app/version - Returns current app version info (for update checking)
+app.get('/api/app/version', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    // Auto-create table if not exists
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS app_versions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        platform VARCHAR(50) NOT NULL,
+        version VARCHAR(50) NOT NULL,
+        build_number INT DEFAULT 0,
+        min_version VARCHAR(50),
+        download_url VARCHAR(2000),
+        release_notes TEXT,
+        force_update TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const [rows] = await pool.execute(
+      'SELECT * FROM app_versions ORDER BY created_at DESC LIMIT 5'
+    );
+    // Return latest per platform
+    const versions = {};
+    for (const row of rows) {
+      if (!versions[row.platform]) versions[row.platform] = row;
+    }
+    res.json(versions);
+  } catch (err) {
+    res.json({});
+  }
+});
+
+// POST /api/admin/app-versions - Add a new app version (admin)
+app.post('/api/admin/app-versions', requireAdmin, async (req, res) => {
+  try {
+    const { platform, version, build_number, min_version, download_url, release_notes, force_update } = req.body;
+    if (!platform || !version) return res.status(400).json({ error: 'Platform and version required' });
+    const pool = await getMysqlPool();
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS app_versions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        platform VARCHAR(50) NOT NULL,
+        version VARCHAR(50) NOT NULL,
+        build_number INT DEFAULT 0,
+        min_version VARCHAR(50),
+        download_url VARCHAR(2000),
+        release_notes TEXT,
+        force_update TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const [result] = await pool.execute(
+      'INSERT INTO app_versions (platform, version, build_number, min_version, download_url, release_notes, force_update) VALUES (?,?,?,?,?,?,?)',
+      [platform, version, parseInt(build_number) || 0, min_version || null, download_url || null, release_notes || null, force_update ? 1 : 0]
+    );
+    await logAdminAction(getAdminSettings().username, 'add_app_version', 'app_versions', result.insertId, null, req.ip);
+    res.json({ success: true, id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── FCM Push Notification Sending ───
+
+// POST /api/admin/push-notification - Send push notification to all users
+app.post('/api/admin/push-notification', requireAdmin, async (req, res) => {
+  try {
+    const { title, body, topic, data } = req.body;
+    if (!title || !body) return res.status(400).json({ error: 'Title and body required' });
+
+    const pool = await getMysqlPool();
+
+    // Store notification in database
+    await pool.execute(
+      'INSERT INTO user_notifications (title, body, topic, data, sent_at) VALUES (?,?,?,?,NOW())',
+      [title, body, topic || 'all', data ? JSON.stringify(data) : null]
+    );
+
+    // Create admin notification table for user-facing notifications if needed
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(500) NOT NULL,
+        body TEXT,
+        topic VARCHAR(255) DEFAULT 'all',
+        data JSON,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // TODO: Integrate with Firebase Admin SDK when FCM credentials are configured
+    // const admin = require('firebase-admin');
+    // await admin.messaging().send({
+    //   topic: topic || 'all',
+    //   notification: { title, body },
+    //   data: data || {},
+    // });
+
+    await logAdminAction(getAdminSettings().username, 'send_push_notification', 'notifications', null, JSON.stringify({ title, topic }), req.ip);
+    res.json({ success: true, message: 'Notification stored. FCM delivery requires Firebase Admin SDK configuration.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/auth/notifications - User-facing notifications endpoint
+app.get('/api/auth/notifications', async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(500) NOT NULL,
+        body TEXT,
+        topic VARCHAR(255) DEFAULT 'all',
+        data JSON,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const [rows] = await pool.execute(
+      'SELECT * FROM user_notifications ORDER BY sent_at DESC LIMIT 50'
+    );
+    res.json(rows);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// ─── Token-Based Access Control Module ───
+// ═══════════════════════════════════════════════════════════
+
+// --- Simple in-memory rate limiter for token endpoints ---
+const tokenRateLimits = new Map(); // key: IP, value: { count, resetAt }
+const TOKEN_RATE_LIMIT_MAX = 10;
+const TOKEN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function tokenRateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  let entry = tokenRateLimits.get(ip);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + TOKEN_RATE_LIMIT_WINDOW_MS };
+    tokenRateLimits.set(ip, entry);
+  }
+  entry.count++;
+  if (entry.count > TOKEN_RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
+  }
+  next();
+}
+
+// Clean up rate limit map every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of tokenRateLimits) {
+    if (now > entry.resetAt) tokenRateLimits.delete(ip);
+  }
+}, 30 * 60 * 1000);
+
+// --- Middleware: requireActiveSubscription ---
+// Checks token-based valid_until OR Stripe-based subscription_expires
+function requireActiveSubscription(req, res, next) {
+  const user = req.appUser;
+  if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+  // Check token-based validity first
+  if (user.valid_until) {
+    const validUntil = new Date(user.valid_until);
+    if (!Number.isNaN(validUntil.getTime()) && validUntil > new Date()) {
+      if (user.account_status !== 'suspended') return next();
+    }
+  }
+
+  // Fallback: check Stripe-based subscription (backward compat)
+  if (hasActivePaidSubscription(user)) return next();
+
+  // Access denied
+  if (wantsHtmlResponse(req)) {
+    return res.redirect('/user-dashboard?error=Your+subscription+has+expired.+Please+extend+with+a+new+token.');
+  }
+  return res.status(403).json({
+    error: 'Subscription expired',
+    renewal_required: true,
+    valid_until: user.valid_until || user.subscription_expires || null,
+  });
+}
+
+// --- Admin Token API Routes ---
+
+// POST /api/admin/tokens/create — Create single-user tokens or reseller bundles
+app.post('/api/admin/tokens/create', requireAdmin, async (req, res) => {
+  const { token_type, duration_type, duration_days, quantity, reseller_name, expires_in_days } = req.body || {};
+
+  if (!token_type || !duration_type) {
+    return res.status(400).json({ error: 'token_type and duration_type are required' });
+  }
+  if (!['single', 'reseller_bundle'].includes(token_type)) {
+    return res.status(400).json({ error: 'token_type must be "single" or "reseller_bundle"' });
+  }
+  if (!['monthly', 'yearly', 'custom'].includes(duration_type)) {
+    return res.status(400).json({ error: 'duration_type must be "monthly", "yearly", or "custom"' });
+  }
+
+  // Calculate duration in days
+  let calcDays;
+  if (duration_type === 'monthly') calcDays = 30;
+  else if (duration_type === 'yearly') calcDays = 365;
+  else {
+    calcDays = parseInt(duration_days);
+    if (!calcDays || calcDays < 1 || calcDays > 3650) {
+      return res.status(400).json({ error: 'duration_days must be between 1 and 3650 for custom type' });
+    }
+  }
+
+  // Token code validity window (how long before an unused code expires)
+  const codeValidityDays = parseInt(expires_in_days) || 90;
+  const expiresAt = new Date(Date.now() + codeValidityDays * 86400000);
+  const adminUser = getAdminSettings().username;
+
+  try {
+    const pool = await getMysqlPool();
+    const generatedTokens = [];
+
+    if (token_type === 'single') {
+      // Generate one single-use token
+      const tokenCode = crypto.randomUUID();
+      await pool.execute(
+        'INSERT INTO tokens (token_code, token_type, duration_type, duration_days, status, expires_at, created_by, assigned_to_reseller) VALUES (?,?,?,?,?,?,?,?)',
+        [tokenCode, 'single', duration_type, calcDays, 'available', expiresAt, adminUser, null]
+      );
+      generatedTokens.push({ token_code: tokenCode, token_type: 'single', duration_days: calcDays, status: 'available' });
+
+    } else if (token_type === 'reseller_bundle') {
+      const qty = parseInt(quantity);
+      if (!qty || qty < 1 || qty > 1000) {
+        return res.status(400).json({ error: 'quantity must be between 1 and 1000 for reseller_bundle' });
+      }
+      const resellerLabel = String(reseller_name || '').trim() || null;
+
+      // Create the parent bundle record
+      const bundleCode = crypto.randomUUID();
+      const [bundleResult] = await pool.execute(
+        'INSERT INTO tokens (token_code, token_type, duration_type, duration_days, status, expires_at, created_by, assigned_to_reseller) VALUES (?,?,?,?,?,?,?,?)',
+        [bundleCode, 'reseller_bundle', duration_type, calcDays, 'available', expiresAt, adminUser, resellerLabel]
+      );
+      const bundleId = bundleResult.insertId;
+
+      generatedTokens.push({ id: bundleId, token_code: bundleCode, token_type: 'reseller_bundle', duration_days: calcDays, status: 'available', quantity: qty });
+
+      // Create individual reseller unit tokens
+      for (let i = 0; i < qty; i++) {
+        const unitCode = crypto.randomUUID();
+        await pool.execute(
+          'INSERT INTO tokens (token_code, token_type, parent_bundle_id, duration_type, duration_days, status, expires_at, created_by, assigned_to_reseller) VALUES (?,?,?,?,?,?,?,?,?)',
+          [unitCode, 'reseller_unit', bundleId, duration_type, calcDays, 'available', expiresAt, adminUser, resellerLabel]
+        );
+        generatedTokens.push({ token_code: unitCode, token_type: 'reseller_unit', parent_bundle_id: bundleId, duration_days: calcDays, status: 'available' });
+      }
+    }
+
+    await logAdminAction(adminUser, 'create_tokens', 'tokens', null, JSON.stringify({ token_type, duration_type, count: generatedTokens.length }), req.ip);
+    res.json({ success: true, tokens: generatedTokens });
+  } catch (err) {
+    console.error('Token creation error:', err.message);
+    res.status(500).json({ error: 'Failed to create tokens' });
+  }
+});
+
+// GET /api/admin/tokens — List all tokens with filters
+app.get('/api/admin/tokens', requireAdmin, async (req, res) => {
+  const { status, type, reseller, search, page, limit } = req.query;
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(limit) || 50));
+  const offset = (pageNum - 1) * pageSize;
+
+  try {
+    const pool = await getMysqlPool();
+    let where = [];
+    let params = [];
+
+    if (status) { where.push('t.status = ?'); params.push(status); }
+    if (type) { where.push('t.token_type = ?'); params.push(type); }
+    if (reseller) { where.push('t.assigned_to_reseller = ?'); params.push(reseller); }
+    if (search) { where.push('(t.token_code LIKE ? OR u.username LIKE ? OR u.email LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+
+    const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+
+    const [[{ total }]] = await pool.execute(
+      `SELECT COUNT(*) AS total FROM tokens t LEFT JOIN users u ON t.assigned_to_user = u.id ${whereClause}`,
+      params
+    );
+
+    const [tokens] = await pool.execute(
+      `SELECT t.*, u.username AS assigned_username, u.email AS assigned_email, u.valid_until AS user_valid_until
+       FROM tokens t
+       LEFT JOIN users u ON t.assigned_to_user = u.id
+       ${whereClause}
+       ORDER BY t.created_at DESC
+       LIMIT ${pageSize} OFFSET ${offset}`,
+      params
+    );
+
+    res.json({ tokens, total, page: pageNum, limit: pageSize });
+  } catch (err) {
+    console.error('Token list error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch tokens' });
+  }
+});
+
+// POST /api/admin/tokens/:id/revoke — Revoke a token
+app.post('/api/admin/tokens/:id/revoke', requireAdmin, async (req, res) => {
+  const tokenId = parseInt(req.params.id);
+  if (!tokenId) return res.status(400).json({ error: 'Invalid token ID' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[token]] = await pool.execute('SELECT * FROM tokens WHERE id = ?', [tokenId]);
+    if (!token) return res.status(404).json({ error: 'Token not found' });
+    if (token.status === 'revoked') return res.status(400).json({ error: 'Token is already revoked' });
+
+    await pool.execute('UPDATE tokens SET status = ? WHERE id = ?', ['revoked', tokenId]);
+
+    // If token was active and assigned to a user, suspend their account (only if this is their active token)
+    if (token.status === 'active' && token.assigned_to_user) {
+      const [[user]] = await pool.execute('SELECT id, active_token_id FROM users WHERE id = ?', [token.assigned_to_user]);
+      if (user && user.active_token_id === tokenId) {
+        await pool.execute('UPDATE users SET account_status = ? WHERE id = ?', ['suspended', user.id]);
+      }
+    }
+
+    // If revoking a bundle, also revoke all child units that are still available
+    if (token.token_type === 'reseller_bundle') {
+      await pool.execute(
+        "UPDATE tokens SET status = 'revoked' WHERE parent_bundle_id = ? AND status = 'available'",
+        [tokenId]
+      );
+    }
+
+    await logAdminAction(getAdminSettings().username, 'revoke_token', 'tokens', tokenId, JSON.stringify({ previous_status: token.status, token_code: token.token_code }), req.ip);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Token revoke error:', err.message);
+    res.status(500).json({ error: 'Failed to revoke token' });
+  }
+});
+
+// GET /api/admin/tokens/stats — Dashboard statistics
+app.get('/api/admin/tokens/stats', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+
+    // Token counts by status
+    const [statusCounts] = await pool.execute(
+      "SELECT status, COUNT(*) AS count FROM tokens WHERE token_type != 'reseller_bundle' GROUP BY status"
+    );
+    const counts = { available: 0, active: 0, expired: 0, revoked: 0 };
+    statusCounts.forEach(r => { counts[r.status] = r.count; });
+    const totalTokens = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    // Active user accounts (valid_until in future)
+    const [[{ activeUsers }]] = await pool.execute(
+      "SELECT COUNT(*) AS activeUsers FROM users WHERE (valid_until IS NOT NULL AND valid_until > NOW() AND account_status = 'active') OR (subscription_expires IS NOT NULL AND subscription_expires > NOW() AND subscription_status = 'active')"
+    );
+
+    // Tokens expiring in 7 / 30 days (active tokens whose associated user's valid_until is approaching)
+    const [[{ expiring7 }]] = await pool.execute(
+      "SELECT COUNT(*) AS expiring7 FROM users WHERE valid_until IS NOT NULL AND valid_until > NOW() AND valid_until <= DATE_ADD(NOW(), INTERVAL 7 DAY) AND account_status = 'active'"
+    );
+    const [[{ expiring30 }]] = await pool.execute(
+      "SELECT COUNT(*) AS expiring30 FROM users WHERE valid_until IS NOT NULL AND valid_until > NOW() AND valid_until <= DATE_ADD(NOW(), INTERVAL 30 DAY) AND account_status = 'active'"
+    );
+
+    // Total bundles and their utilization
+    const [[{ totalBundles }]] = await pool.execute(
+      "SELECT COUNT(*) AS totalBundles FROM tokens WHERE token_type = 'reseller_bundle'"
+    );
+
+    res.json({
+      total_tokens: totalTokens,
+      available: counts.available,
+      active: counts.active,
+      expired: counts.expired,
+      revoked: counts.revoked,
+      active_users: activeUsers,
+      expiring_7_days: expiring7,
+      expiring_30_days: expiring30,
+      total_bundles: totalBundles,
+    });
+  } catch (err) {
+    console.error('Token stats error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch token stats' });
+  }
+});
+
+// GET /api/admin/tokens/resellers — Reseller summary
+app.get('/api/admin/tokens/resellers', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getMysqlPool();
+    const [rows] = await pool.execute(`
+      SELECT
+        t.assigned_to_reseller AS reseller_name,
+        COUNT(DISTINCT CASE WHEN t.token_type = 'reseller_bundle' THEN t.id END) AS total_bundles,
+        COUNT(CASE WHEN t.token_type = 'reseller_unit' THEN 1 END) AS total_units,
+        COUNT(CASE WHEN t.token_type = 'reseller_unit' AND t.status = 'available' THEN 1 END) AS available_units,
+        COUNT(CASE WHEN t.token_type = 'reseller_unit' AND t.status = 'active' THEN 1 END) AS used_units,
+        COUNT(CASE WHEN t.token_type = 'reseller_unit' AND t.status = 'expired' THEN 1 END) AS expired_units,
+        COUNT(CASE WHEN t.token_type = 'reseller_unit' AND t.status = 'revoked' THEN 1 END) AS revoked_units
+      FROM tokens t
+      WHERE t.assigned_to_reseller IS NOT NULL
+      GROUP BY t.assigned_to_reseller
+      ORDER BY total_units DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('Reseller list error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch resellers' });
+  }
+});
+
+// --- User Token Routes ---
+
+// POST /api/auth/validate-token — Check if a token code is valid before registration
+app.post('/api/auth/validate-token', tokenRateLimit, express.json(), async (req, res) => {
+  const { token_code } = req.body || {};
+  if (!token_code || !String(token_code).trim()) {
+    return res.status(400).json({ valid: false, error: 'Token code is required' });
+  }
+  try {
+    const pool = await getMysqlPool();
+    const [[token]] = await pool.execute('SELECT status, expires_at, token_type, duration_days FROM tokens WHERE token_code = ?', [String(token_code).trim()]);
+    if (!token) {
+      return res.json({ valid: false, error: 'Invalid token code' });
+    }
+    if (token.token_type === 'reseller_bundle') {
+      return res.json({ valid: false, error: 'This is a bundle code. Please use an individual token code.' });
+    }
+    if (token.status !== 'available') {
+      const msg = token.status === 'revoked' ? 'This token has been revoked' : token.status === 'expired' ? 'This token has expired' : 'This token has already been used';
+      return res.json({ valid: false, error: msg });
+    }
+    if (token.expires_at && new Date(token.expires_at) < new Date()) {
+      await pool.execute("UPDATE tokens SET status = 'expired' WHERE token_code = ?", [String(token_code).trim()]);
+      return res.json({ valid: false, error: 'This token has expired' });
+    }
+    return res.json({ valid: true, duration_days: token.duration_days });
+  } catch (err) {
+    console.error('Token validation error:', err);
+    return res.status(500).json({ valid: false, error: 'Server error' });
+  }
+});
+
+// POST /api/auth/register-with-token — Register new account using a token
+app.post('/api/auth/register-with-token', tokenRateLimit, express.json(), async (req, res) => {
+  const { token_code, username, email, password, confirm_password, full_name, device_id } = req.body || {};
+
+  // Validate fields
+  if (!token_code) {
+    const err = 'Token code is required';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (!username || !password || !email) {
+    const err = 'Username, email, and password are required';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (String(username).trim().length < 3) {
+    const err = 'Username must be at least 3 characters';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+    const err = 'Please enter a valid email address';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (String(password).length < 8) {
+    const err = 'Password must be at least 8 characters';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+    const err = 'Password must include at least 1 uppercase letter and 1 number';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+  if (confirm_password !== undefined && password !== confirm_password) {
+    const err = 'Passwords do not match';
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+    return res.status(400).json({ error: err });
+  }
+
+  try {
+    const pool = await getMysqlPool();
+
+    // Validate token
+    const [[token]] = await pool.execute('SELECT * FROM tokens WHERE token_code = ?', [String(token_code).trim()]);
+    if (!token) {
+      const err = 'Invalid token code';
+      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+      return res.status(400).json({ error: err });
+    }
+    if (token.token_type === 'reseller_bundle') {
+      const err = 'This is a bundle code. Please use an individual token code.';
+      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+      return res.status(400).json({ error: err });
+    }
+    if (token.status !== 'available') {
+      const err = token.status === 'revoked' ? 'This token has been revoked' : token.status === 'expired' ? 'This token has expired' : 'This token has already been used';
+      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+      return res.status(400).json({ error: err });
+    }
+    if (token.expires_at && new Date(token.expires_at) < new Date()) {
+      // Mark as expired if not already
+      await pool.execute("UPDATE tokens SET status = 'expired' WHERE id = ?", [token.id]);
+      const err = 'This token has expired';
+      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+      return res.status(400).json({ error: err });
+    }
+
+    const cleanUsername = String(username).trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanName = String(full_name || '').trim();
+
+    // Check uniqueness
+    const [existing] = await pool.execute(
+      'SELECT id FROM users WHERE username = ? OR email = ?',
+      [cleanUsername, cleanEmail]
+    );
+    if (existing.length > 0) {
+      const err = 'Username or email already exists';
+      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
+      return res.status(409).json({ error: err });
+    }
+
+    // Hash password
+    const { salt, hash } = hashUserPassword(password);
+
+    // Calculate valid_until from now + token duration
+    const validUntil = new Date(Date.now() + token.duration_days * 86400000);
+
+    // Insert user
+    const [result] = await pool.execute(
+      'INSERT INTO users (username, email, full_name, password_salt, password_hash, subscription_type, subscription_status, active_token_id, valid_until, account_status) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [cleanUsername, cleanEmail, cleanName || null, salt, hash, 'token', 'active', token.id, validUntil, 'active']
+    );
+    const userId = result.insertId;
+
+    // Update token
+    await pool.execute(
+      "UPDATE tokens SET status = 'active', assigned_to_user = ?, used_at = NOW() WHERE id = ?",
+      [userId, token.id]
+    );
+
+    // Record history
+    await pool.execute(
+      'INSERT INTO token_history (token_id, user_id, action, valid_from, valid_until) VALUES (?,?,?,NOW(),?)',
+      [token.id, userId, 'register', validUntil]
+    );
+
+    // Create session
+    const sessionToken = generateToken();
+    const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await pool.execute(
+      'INSERT INTO sessions (user_id, token, device_id, expires_at, is_active) VALUES (?,?,?,?,1)',
+      [userId, sessionToken, device_id || null, sessionExpiresAt]
+    );
+
+    // Admin notification
+    await pool.execute(
+      'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+      ['token_registration', 'Token Registration', `${cleanUsername} registered with token ${token.token_code.substring(0, 8)}...`, JSON.stringify({ user_id: userId, token_id: token.id })]
+    );
+
+    // Response
+    if (wantsHtmlResponse(req)) {
+      res.cookie('imd_user_token', sessionToken, {
+        httpOnly: true, sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
+      });
+      return res.render('signup-success', {
+        username: cleanUsername,
+        email: cleanEmail,
+        fullName: cleanName,
+        validUntil: validUntil.toISOString().split('T')[0],
+        durationDays: token.duration_days,
+      });
+    }
+
+    res.status(201).json({
+      token: sessionToken,
+      expires_at: sessionExpiresAt.toISOString(),
+      valid_until: validUntil.toISOString(),
+      user: { id: userId, username: cleanUsername, email: cleanEmail, full_name: cleanName, subscription_type: 'token', account_status: 'active', valid_until: validUntil.toISOString() },
+    });
+  } catch (err) {
+    console.error('Token registration error:', err.message);
+    if (wantsHtmlResponse(req)) return res.render('signup', { error: 'Registration failed. Please try again.', success: '' });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/account/extend — Extend account with a new token
+app.post('/api/account/extend', requireAppAuth, tokenRateLimit, async (req, res) => {
+  const { token_code } = req.body || {};
+  if (!token_code) return res.status(400).json({ error: 'Token code is required' });
+
+  try {
+    const pool = await getMysqlPool();
+    const userId = req.appUser.user_id;
+
+    // Validate token
+    const [[token]] = await pool.execute('SELECT * FROM tokens WHERE token_code = ?', [String(token_code).trim()]);
+    if (!token) return res.status(400).json({ error: 'Invalid token code' });
+    if (token.token_type === 'reseller_bundle') return res.status(400).json({ error: 'This is a bundle code. Please use an individual token code.' });
+    if (token.status !== 'available') {
+      const msg = token.status === 'revoked' ? 'This token has been revoked' : token.status === 'expired' ? 'This token has expired' : 'This token has already been used';
+      return res.status(400).json({ error: msg });
+    }
+    if (token.expires_at && new Date(token.expires_at) < new Date()) {
+      await pool.execute("UPDATE tokens SET status = 'expired' WHERE id = ?", [token.id]);
+      return res.status(400).json({ error: 'This token has expired' });
+    }
+
+    // Calculate new valid_until: extend from current expiry or from now if already expired
+    const [[currentUser]] = await pool.execute('SELECT valid_until, subscription_expires FROM users WHERE id = ?', [userId]);
+    let base = new Date();
+
+    // Check token-based valid_until first, then Stripe-based subscription_expires
+    if (currentUser.valid_until) {
+      const currentExpiry = new Date(currentUser.valid_until);
+      if (!Number.isNaN(currentExpiry.getTime()) && currentExpiry > base) {
+        base = currentExpiry;
+      }
+    } else if (currentUser.subscription_expires) {
+      const stripeExpiry = new Date(currentUser.subscription_expires);
+      if (!Number.isNaN(stripeExpiry.getTime()) && stripeExpiry > base) {
+        base = stripeExpiry;
+      }
+    }
+
+    const newValidUntil = new Date(base.getTime() + token.duration_days * 86400000);
+
+    // Update user
+    await pool.execute(
+      "UPDATE users SET active_token_id = ?, valid_until = ?, account_status = 'active' WHERE id = ?",
+      [token.id, newValidUntil, userId]
+    );
+
+    // Update token
+    await pool.execute(
+      "UPDATE tokens SET status = 'active', assigned_to_user = ?, used_at = NOW() WHERE id = ?",
+      [userId, token.id]
+    );
+
+    // Record history
+    await pool.execute(
+      'INSERT INTO token_history (token_id, user_id, action, valid_from, valid_until) VALUES (?,?,?,NOW(),?)',
+      [token.id, userId, 'extend', newValidUntil]
+    );
+
+    // Admin notification
+    const [[userData]] = await pool.execute('SELECT username FROM users WHERE id = ?', [userId]);
+    await pool.execute(
+      'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+      ['token_extension', 'Account Extended', `${userData.username} extended with token ${token.token_code.substring(0, 8)}...`, JSON.stringify({ user_id: userId, token_id: token.id })]
+    );
+
+    res.json({ success: true, valid_until: newValidUntil.toISOString() });
+  } catch (err) {
+    console.error('Account extension error:', err.message);
+    res.status(500).json({ error: 'Failed to extend account' });
+  }
+});
+
+// GET /api/admin/tokens/:id — View single token details
+app.get('/api/admin/tokens/:id', requireAdmin, async (req, res) => {
+  const tokenId = parseInt(req.params.id);
+  if (!tokenId) return res.status(400).json({ error: 'Invalid token ID' });
+
+  try {
+    const pool = await getMysqlPool();
+    const [[token]] = await pool.execute(
+      `SELECT t.*, u.username AS assigned_username, u.email AS assigned_email, u.valid_until AS user_valid_until
+       FROM tokens t LEFT JOIN users u ON t.assigned_to_user = u.id WHERE t.id = ?`,
+      [tokenId]
+    );
+    if (!token) return res.status(404).json({ error: 'Token not found' });
+
+    // If bundle, also get children
+    let children = [];
+    if (token.token_type === 'reseller_bundle') {
+      const [childRows] = await pool.execute(
+        `SELECT t.*, u.username AS assigned_username FROM tokens t
+         LEFT JOIN users u ON t.assigned_to_user = u.id
+         WHERE t.parent_bundle_id = ? ORDER BY t.created_at ASC`,
+        [tokenId]
+      );
+      children = childRows;
+    }
+
+    // Get history
+    const [history] = await pool.execute(
+      `SELECT th.*, u.username FROM token_history th
+       JOIN users u ON th.user_id = u.id WHERE th.token_id = ? ORDER BY th.applied_at DESC`,
+      [tokenId]
+    );
+
+    res.json({ token, children, history });
+  } catch (err) {
+    console.error('Token detail error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch token details' });
+  }
+});
+
+// ─── Admin Token Management Page ───
+app.get('/admin/tokens', requireAdmin, (req, res) => {
+  res.render('tokens', { currentAdminUser: getAdminSettings().username });
+});
+
 // ─── Subscription Expiry Cron (runs every hour) ───
 setInterval(async () => {
   try {
     const pool = await getMysqlPool();
+
+    // 1. Expire Stripe-based subscriptions
     const [expired] = await pool.execute(
       "SELECT id, username FROM users WHERE subscription_expires < NOW() AND subscription_type != 'free' AND subscription_status != 'expired'"
     );
@@ -4048,8 +4788,33 @@ setInterval(async () => {
       }
       console.log(`[Cron] Expired ${expired.length} subscriptions`);
     }
+
+    // 2. Expire unused token codes past their expires_at
+    const [expiredTokens] = await pool.execute(
+      "UPDATE tokens SET status = 'expired' WHERE status = 'available' AND expires_at IS NOT NULL AND expires_at < NOW()"
+    );
+    if (expiredTokens.affectedRows > 0) {
+      console.log(`[Cron] Expired ${expiredTokens.affectedRows} unused token codes`);
+    }
+
+    // 3. Expire token-based user accounts past their valid_until
+    const [expiredAccounts] = await pool.execute(
+      "SELECT id, username FROM users WHERE valid_until IS NOT NULL AND valid_until < NOW() AND account_status = 'active'"
+    );
+    if (expiredAccounts.length > 0) {
+      await pool.execute(
+        "UPDATE users SET account_status = 'expired' WHERE valid_until IS NOT NULL AND valid_until < NOW() AND account_status = 'active'"
+      );
+      for (const u of expiredAccounts) {
+        await pool.execute(
+          'INSERT INTO admin_notifications (type, title, message, data) VALUES (?,?,?,?)',
+          ['token_account_expired', 'Token Account Expired', `User ${u.username} (#${u.id}) token-based access expired`, JSON.stringify({ user_id: u.id })]
+        );
+      }
+      console.log(`[Cron] Expired ${expiredAccounts.length} token-based accounts`);
+    }
   } catch (err) {
-    console.error('[Cron] Subscription expiry check failed:', err.message);
+    console.error('[Cron] Expiry check failed:', err.message);
   }
 }, 60 * 60 * 1000); // every hour
 

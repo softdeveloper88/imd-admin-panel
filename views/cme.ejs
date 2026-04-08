@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CME Videos – iMD Admin</title>
+  <style>
+    :root {
+      --bg: #f4efe7; --panel: rgba(255,251,245,0.9); --panel-strong: #fffdf8;
+      --ink: #1d2a2f; --muted: #66757e; --line: rgba(35,50,58,0.12);
+      --brand: #0f766e; --brand-deep: #0b4f49;
+      --danger: #b42318; --danger-bg: #fff0ed;
+      --success: #0f7b4d; --success-bg: #edf9f0;
+      --shadow: 0 22px 50px rgba(31,38,43,0.12); --radius: 22px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Avenir Next","Helvetica Neue","Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(15,118,110,0.14),transparent 26%),radial-gradient(circle at top right,rgba(217,119,6,0.12),transparent 20%),linear-gradient(180deg,#f8f2e8 0%,var(--bg) 100%);min-height:100vh;display:flex}
+    a{color:inherit}
+    .sidebar{width:250px;min-height:100vh;background:linear-gradient(180deg,rgba(12,58,69,0.97),rgba(22,90,84,0.93));color:#f9fafb;padding:0;flex-shrink:0;position:fixed;left:0;top:0;bottom:0;z-index:100;transition:transform .2s}
+    .sidebar-header{padding:20px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1)}
+    .logo{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}
+    .logo-icon{font-size:24px}
+    .sidebar-toggle{background:none;border:none;color:#f9fafb;font-size:20px;cursor:pointer;padding:4px 8px}
+    .sidebar-menu{padding:12px 0}
+    .menu-section{margin-bottom:8px}
+    .menu-label{padding:8px 20px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em;opacity:.5}
+    .menu-item{display:flex;align-items:center;gap:10px;padding:10px 20px;text-decoration:none;color:rgba(255,255,255,.7);font-size:14px;transition:all .15s}
+    .menu-item:hover{background:rgba(255,255,255,.08);color:#fff}
+    .menu-item.active{background:rgba(255,255,255,.12);color:#fff;border-left:3px solid #5eead4}
+    .menu-icon{font-size:16px;width:22px;text-align:center}
+    .menu-text{white-space:nowrap}
+    .main-content{margin-left:250px;flex:1;min-width:0}
+
+    /* Header */
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;background:var(--panel);border-bottom:1px solid var(--line)}
+    .topbar-left{display:flex;align-items:center;gap:12px}
+    .topbar-right{display:flex;align-items:center;gap:16px}
+    .breadcrumbs{font-size:14px;color:var(--muted)}
+    .breadcrumbs a{color:var(--brand);text-decoration:none}
+    .mobile-toggle{display:none;background:none;border:none;font-size:20px;cursor:pointer}
+    .btn-logout-sm{background:none;border:1px solid var(--line);padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted)}
+    .btn-logout-sm:hover{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
+    .admin-name{font-size:13px;color:var(--muted)}
+    .notif-bell{cursor:pointer;font-size:18px;position:relative}
+    .notif-count{position:absolute;top:-6px;right:-8px;background:var(--danger);color:#fff;font-size:10px;padding:1px 5px;border-radius:99px}
+    .notif-dropdown{position:absolute;right:80px;top:52px;width:340px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);z-index:200;max-height:400px;overflow:auto}
+    .notif-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+    .notif-mark-all{background:none;border:none;color:var(--brand);cursor:pointer;font-size:12px}
+    .notif-item{padding:12px 16px;border-bottom:1px solid rgba(0,0,0,.04);cursor:pointer}
+    .notif-item.unread{background:#f0fdf4}
+    .notif-title{font-size:13px;font-weight:600}
+    .notif-msg{font-size:12px;color:var(--muted);margin-top:2px}
+    .notif-time{font-size:11px;color:var(--muted);margin-top:4px}
+
+    /* Page */
+    .page-content{padding:28px}
+    h1{font-size:28px;font-weight:700;margin:0 0 8px}
+    .subtitle{color:var(--muted);font-size:15px;margin-bottom:28px}
+    .card{background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px;margin-bottom:24px}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn-primary{background:var(--brand);color:#fff}
+    .btn-primary:hover{background:var(--brand-deep)}
+    .btn-danger{background:var(--danger);color:#fff}
+    .btn-danger:hover{opacity:.85}
+    .btn-sm{padding:6px 14px;font-size:13px;border-radius:8px}
+    table{width:100%;border-collapse:collapse}
+    th{text-align:left;padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--line)}
+    td{padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px}
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:var(--muted)}
+    .form-group input,.form-group textarea,.form-group select{width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:var(--panel-strong)}
+    .form-group textarea{resize:vertical;min-height:80px}
+    .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;justify-content:center;align-items:center}
+    .modal.open{display:flex}
+    .modal-content{background:var(--panel-strong);border-radius:var(--radius);padding:32px;width:90%;max-width:550px;max-height:90vh;overflow-y:auto}
+    .modal-title{font-size:20px;font-weight:700;margin:0 0 20px}
+    .badge{display:inline-block;padding:2px 10px;border-radius:8px;font-size:12px;font-weight:600}
+    .badge-active{background:var(--success-bg);color:var(--success)}
+    .badge-inactive{background:var(--danger-bg);color:var(--danger)}
+    @media(max-width:768px){.sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.main-content{margin-left:0;}.mobile-toggle{display:block}.page-content{padding:16px}}
+  </style>
+</head>
+<body>
+  <%- include('partials/sidebar', { activePage: 'cme' }) %>
+  <div class="main-content">
+    <%- include('partials/header', { breadcrumb: 'CME Videos', currentAdminUser: typeof currentAdminUser !== 'undefined' ? currentAdminUser : 'Admin' }) %>
+    <div class="page-content">
+    <h1>CME Videos</h1>
+    <p class="subtitle">Manage continuing medical education video content</p>
+
+    <div style="margin-bottom:20px">
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add Video</button>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (videos && videos.length > 0) { %>
+            <% videos.forEach(v => { %>
+            <tr>
+              <td><strong><%= v.title %></strong></td>
+              <td><%= v.category || 'General' %></td>
+              <td><%= v.duration ? Math.floor(v.duration/60) + 'm' : '-' %></td>
+              <td><span class="badge <%= v.is_active ? 'badge-active' : 'badge-inactive' %>"><%= v.is_active ? 'Active' : 'Inactive' %></span></td>
+              <td><%= new Date(v.created_at).toLocaleDateString() %></td>
+              <td>
+                <button class="btn btn-sm" onclick="editVideo(<%= JSON.stringify(v).replace(/"/g, '&quot;') %>)">Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteVideo(<%= v.id %>)">Delete</button>
+              </td>
+            </tr>
+            <% }) %>
+          <% } else { %>
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">No CME videos yet. Click "Add Video" to get started.</td></tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal" id="videoModal">
+    <div class="modal-content">
+      <h2 class="modal-title" id="modalTitle">Add Video</h2>
+      <form id="videoForm" onsubmit="saveVideo(event)">
+        <input type="hidden" id="videoId">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="vTitle" required>
+        </div>
+        <div class="form-group">
+          <label>Video URL *</label>
+          <input type="url" id="vUrl" required placeholder="https://videos.imedicaldoctor.net/cmeinfo/...">
+        </div>
+        <div class="form-group">
+          <label>Thumbnail URL</label>
+          <input type="url" id="vThumb" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="vDesc"></textarea>
+        </div>
+        <div style="display:flex;gap:12px">
+          <div class="form-group" style="flex:1">
+            <label>Category</label>
+            <input type="text" id="vCategory" value="General">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Duration (seconds)</label>
+            <input type="number" id="vDuration" min="0">
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:12px">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn" onclick="closeModal()" style="background:var(--line)">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function openAddModal() {
+      document.getElementById('modalTitle').textContent = 'Add Video';
+      document.getElementById('videoId').value = '';
+      document.getElementById('vTitle').value = '';
+      document.getElementById('vUrl').value = '';
+      document.getElementById('vThumb').value = '';
+      document.getElementById('vDesc').value = '';
+      document.getElementById('vCategory').value = 'General';
+      document.getElementById('vDuration').value = '';
+      document.getElementById('videoModal').classList.add('open');
+    }
+
+    function editVideo(v) {
+      document.getElementById('modalTitle').textContent = 'Edit Video';
+      document.getElementById('videoId').value = v.id;
+      document.getElementById('vTitle').value = v.title;
+      document.getElementById('vUrl').value = v.video_url;
+      document.getElementById('vThumb').value = v.thumbnail_url || '';
+      document.getElementById('vDesc').value = v.description || '';
+      document.getElementById('vCategory').value = v.category || 'General';
+      document.getElementById('vDuration').value = v.duration || '';
+      document.getElementById('videoModal').classList.add('open');
+    }
+
+    function closeModal() {
+      document.getElementById('videoModal').classList.remove('open');
+    }
+
+    async function saveVideo(e) {
+      e.preventDefault();
+      const id = document.getElementById('videoId').value;
+      const data = {
+        title: document.getElementById('vTitle').value,
+        video_url: document.getElementById('vUrl').value,
+        thumbnail_url: document.getElementById('vThumb').value || null,
+        description: document.getElementById('vDesc').value || null,
+        category: document.getElementById('vCategory').value,
+        duration: parseInt(document.getElementById('vDuration').value) || 0,
+        is_active: true
+      };
+
+      const url = id ? `/api/admin/cme/videos/${id}` : '/api/admin/cme/videos';
+      const method = id ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (res.ok) {
+        location.reload();
+      } else {
+        const err = await res.json();
+        alert('Error: ' + (err.error || 'Unknown'));
+      }
+    }
+
+    async function deleteVideo(id) {
+      if (!confirm('Delete this video?')) return;
+      const res = await fetch(`/api/admin/cme/videos/${id}`, { method: 'DELETE' });
+      if (res.ok) location.reload();
+      else alert('Failed to delete');
+    }
+
+    function toggleSidebar(){
+      document.body.classList.toggle('collapsed');
+      const sb=document.querySelector('.sidebar');
+      sb&&sb.classList.toggle('show');
+    }
+  </script>
+    </div>
+  </div>
+</body>
+</html>

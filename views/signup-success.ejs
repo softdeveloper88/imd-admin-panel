@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Created — iMedicalDoctor</title>
+  <style>
+    :root {
+      --bg: #efe8dc;
+      --panel: rgba(255, 250, 242, 0.9);
+      --ink: #1d2a2f;
+      --muted: #66757e;
+      --brand: #0f766e;
+      --brand-deep: #0b4f49;
+      --success: #0f7b4d;
+      --success-bg: rgba(15, 123, 77, 0.08);
+      --shadow: 0 30px 70px rgba(30, 41, 46, 0.16);
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      min-height: 100vh; display: grid; place-items: center; padding: 24px;
+      font-family: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15,118,110,0.18), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(15,123,77,0.12), transparent 18%),
+        linear-gradient(180deg, #f7f1e6 0%, var(--bg) 100%);
+    }
+    .card {
+      width: min(560px, 100%); text-align: center;
+      padding: 56px 40px;
+      border-radius: 30px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,0.6);
+      backdrop-filter: blur(16px);
+    }
+    .icon-circle {
+      width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 28px;
+      background: var(--success-bg);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .icon-circle svg {
+      width: 52px; height: 52px; color: var(--success);
+    }
+    h1 {
+      font-size: 30px; font-weight: 700; margin-bottom: 8px;
+      color: var(--success);
+    }
+    .subtitle {
+      font-size: 16px; color: var(--muted); margin-bottom: 32px; line-height: 1.6;
+    }
+    .account-info {
+      background: rgba(15,118,110,0.06);
+      border: 1.5px solid rgba(15,118,110,0.18);
+      border-radius: 14px;
+      padding: 20px 28px;
+      margin-bottom: 32px;
+      text-align: left;
+      max-width: 380px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .account-info h3 {
+      font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 14px;
+    }
+    .info-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; font-size: 14px;
+    }
+    .info-row + .info-row { border-top: 1px solid rgba(15,118,110,0.08); }
+    .info-label { color: var(--muted); }
+    .info-value { font-weight: 600; color: var(--brand-deep); }
+    .steps {
+      text-align: left;
+      max-width: 380px;
+      margin: 0 auto 36px;
+    }
+    .steps h3 {
+      font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 16px;
+    }
+    .step {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 10px 0;
+    }
+    .step-num {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--brand-deep), var(--brand));
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .step-text {
+      font-size: 15px; line-height: 1.5; padding-top: 3px;
+    }
+    .step-text strong { color: var(--brand-deep); }
+    .store-badges {
+      display: flex; gap: 12px; justify-content: center; margin-bottom: 24px; flex-wrap: wrap;
+    }
+    .store-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: 12px;
+      background: #1d2a2f; color: #fff;
+      font-size: 14px; font-weight: 600;
+      text-decoration: none; transition: transform 0.15s;
+    }
+    .store-badge:hover { transform: translateY(-1px); }
+    .store-badge svg { width: 20px; height: 20px; }
+    .btn-home {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 32px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--brand-deep), var(--brand));
+      color: #fff; font-size: 15px; font-weight: 600;
+      text-decoration: none; border: none; cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      margin-bottom: 20px;
+    }
+    .btn-home:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(15,118,110,0.25); }
+    .footer-note {
+      font-size: 13px; color: var(--muted); line-height: 1.5;
+    }
+    .footer-note a { color: var(--brand); text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-circle">
+      <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+
+    <h1>Congratulations!</h1>
+    <p class="subtitle">Your iMedicalDoctor account has been created successfully.</p>
+
+    <div class="account-info">
+      <h3>Your Account</h3>
+      <div class="info-row">
+        <span class="info-label">Username</span>
+        <span class="info-value"><%= typeof username !== 'undefined' ? username : '' %></span>
+      </div>
+      <% if (typeof email !== 'undefined' && email) { %>
+      <div class="info-row">
+        <span class="info-label">Email</span>
+        <span class="info-value"><%= email %></span>
+      </div>
+      <% } %>
+      <% if (typeof fullName !== 'undefined' && fullName) { %>
+      <div class="info-row">
+        <span class="info-label">Name</span>
+        <span class="info-value"><%= fullName %></span>
+      </div>
+      <% } %>
+      <% if (typeof validUntil !== 'undefined' && validUntil) { %>
+      <div class="info-row">
+        <span class="info-label">Valid Until</span>
+        <span class="info-value"><%= validUntil %></span>
+      </div>
+      <% } %>
+      <% if (typeof durationDays !== 'undefined' && durationDays) { %>
+      <div class="info-row">
+        <span class="info-label">Duration</span>
+        <span class="info-value"><%= durationDays %> days</span>
+      </div>
+      <% } %>
+    </div>
+
+    <div class="steps">
+      <h3>Next Steps</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">Download the <strong>iMD</strong> app on your phone</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">Open the app and tap <strong>Login</strong></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">Sign in with your username and password to access all your content</div>
+      </div>
+    </div>
+
+    <a href="/" class="btn-home">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" width="18" height="18">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/>
+      </svg>
+      Back to Home
+    </a>
+
+    <p class="footer-note">
+      Your account is ready. You can now use it from the application.<br>
+      Need help? <a href="mailto:support@imedicaldoctor.com">Contact Support</a>
+    </p>
+  </div>
+</body>
+</html>

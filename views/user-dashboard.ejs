@@ -181,6 +181,55 @@
       </div>
     </div>
 
+    <!-- Token-Based Access Status -->
+    <% if (user.valid_until || user.subscription_type === 'token') { %>
+    <div class="sub-card">
+      <div class="sub-header">
+        <h2>Token Access</h2>
+        <% const tokenStatus = (user.account_status === 'active' && user.valid_until && new Date(user.valid_until) > new Date()) ? 'active' : (user.account_status === 'suspended' ? 'suspended' : 'expired'); %>
+        <span class="badge badge-<%= tokenStatus === 'suspended' ? 'cancelled' : tokenStatus %>"><%= tokenStatus %></span>
+      </div>
+      <div class="sub-info">
+        <div class="info-item">
+          <div class="info-label">Valid Until</div>
+          <div class="info-value"><%= user.valid_until ? new Date(user.valid_until).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '—' %></div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Days Remaining</div>
+          <%
+            const tokenDaysLeft = user.valid_until ? Math.max(0, Math.ceil((new Date(user.valid_until) - new Date()) / 86400000)) : 0;
+          %>
+          <div class="info-value" style="color: <%= tokenDaysLeft <= 7 ? 'var(--danger)' : tokenDaysLeft <= 30 ? 'var(--warning)' : 'var(--success)' %>">
+            <%= tokenDaysLeft %>
+          </div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Account Status</div>
+          <div class="info-value"><%= user.account_status || 'active' %></div>
+        </div>
+      </div>
+      <% if (user.valid_until && tokenDaysLeft > 0) { %>
+      <div class="progress-bar" style="margin-bottom:16px">
+        <div class="progress-fill" style="width: <%= Math.min(100, (tokenDaysLeft / 365) * 100) %>%"></div>
+      </div>
+      <% } %>
+    </div>
+    <% } %>
+
+    <!-- Extend Account with Token -->
+    <div class="sub-card">
+      <h2 class="section-title">Extend with Token</h2>
+      <p style="color:var(--muted); font-size:14px; margin-bottom:16px;">Have a new token code? Enter it below to extend your account access.</p>
+      <form id="extendForm" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="flex:1;min-width:280px;margin:0">
+          <label>Token Code</label>
+          <input type="text" id="extendTokenCode" placeholder="Enter your token code" required style="font-family:monospace">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Apply Token</button>
+      </form>
+      <div id="extendMsg" style="margin-top:12px"></div>
+    </div>
+
     <!-- Payment History -->
     <div class="sub-card">
       <h2 class="section-title">Payment History</h2>
@@ -315,6 +364,34 @@
         if (data.success) { showMsg('success', 'Password updated'); e.target.reset(); }
         else showMsg('error', data.error || 'Update failed');
       } catch { showMsg('error', 'Network error'); }
+    });
+
+    // Token extension
+    document.getElementById('extendForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const tokenCode = document.getElementById('extendTokenCode').value.trim();
+      const msgEl = document.getElementById('extendMsg');
+      if (!tokenCode) {
+        msgEl.innerHTML = '<div class="msg msg-error">Please enter a token code</div>';
+        return;
+      }
+      try {
+        const resp = await fetch('/api/account/extend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token_code: tokenCode }),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          const until = new Date(data.valid_until).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+          msgEl.innerHTML = '<div class="msg msg-success">Account extended! Valid until ' + until + '. Reloading...</div>';
+          setTimeout(() => location.reload(), 2000);
+        } else {
+          msgEl.innerHTML = '<div class="msg msg-error">' + (data.error || 'Failed to extend account') + '</div>';
+        }
+      } catch {
+        msgEl.innerHTML = '<div class="msg msg-error">Network error. Please try again.</div>';
+      }
     });
   </script>
 </body>

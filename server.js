@@ -1019,18 +1019,24 @@ function getPackageInfo(pkgName) {
         info.type = 'drug';
       }
 
-      // Detect category from package name
+      // Detect category from package name — publisher-based grouping
       const nameLower = pkgName.toLowerCase();
-      if (nameLower.includes('uworld') || nameLower.includes('amboss')) info.category = 'USMLE Prep';
+      if (nameLower.includes('uworld') || nameLower.startsWith('step1') || nameLower.startsWith('step2') || nameLower.startsWith('uworldstep')) info.category = 'UWorld QBanks';
+      else if (nameLower.includes('amboss')) info.category = 'Amboss';
+      else if (nameLower.includes('emedici') || nameLower.includes('e-medici')) info.category = 'eMedici QBanks';
+      else if (nameLower.includes('amedex') || nameLower.includes('medex')) info.category = 'Amedex';
+      else if (nameLower.includes('passmedicine') || nameLower.startsWith('pm-')) info.category = 'PassMedicine';
+      else if (nameLower.includes('cqb') || nameLower.includes('cqbank')) info.category = 'CQ Banks';
       else if (nameLower.includes('nbme') || nameLower.includes('shelf')) info.category = 'Board Exams';
-      else if (nameLower.includes('epocrat') || nameLower.includes('lexicomp') || nameLower.includes('drug')) info.category = 'Drug Reference';
+      else if (nameLower.includes('firstaid') || nameLower.includes('first-aid')) info.category = 'First Aid';
+      else if (nameLower.includes('kaplan')) info.category = 'Kaplan';
+      else if (nameLower.includes('epocrat') || nameLower.includes('lexicomp')) info.category = 'Drug Reference';
       else if (nameLower.includes('skyscape') || nameLower.includes('5minute')) info.category = '5-Minute Consult';
       else if (nameLower.includes('uptodate') || nameLower.includes('dynamed')) info.category = 'Clinical Decision';
       else if (nameLower.includes('mksap')) info.category = 'MKSAP';
       else if (nameLower.includes('harrison') || nameLower.includes('cecil') || nameLower.includes('guyton')) info.category = 'Textbooks';
-      else if (nameLower.includes('springer') || nameLower.includes('epub')) info.category = 'eBooks';
-      else if (nameLower.includes('amedex') || nameLower.includes('medex') || nameLower.includes('exam')) info.category = 'MCQ Banks';
-      else if (nameLower.includes('firstaid') || nameLower.includes('first-aid') || nameLower.includes('kaplan')) info.category = 'USMLE Prep';
+      else if (nameLower.includes('springer') || nameLower.includes('epub')) info.category = 'Springer';
+      else if (nameLower.includes('elsevier') || nameLower.match(/^978[0-9-]+$/)) info.category = 'Elsevier Inc';
       else if (info.type === 'mcq') info.category = 'MCQ Banks';
       else if (info.type === 'reference') info.category = 'References';
       else if (info.type === 'drug') info.category = 'Drug Reference';
@@ -3223,7 +3229,39 @@ app.get('/api/packages/:name/download-db', requireAppAuth, async (req, res) => {
   }
 
   const dbPath = path.join(pkg.path, pkg.dbFile);
-  res.download(dbPath, pkg.dbFile);
+  const stat = fs.statSync(dbPath);
+  const fileSize = stat.size;
+
+  // Support Range requests for resumable downloads
+  const rangeHeader = req.headers.range;
+  if (rangeHeader) {
+    const parts = rangeHeader.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+    if (start >= fileSize) {
+      return res.status(416).set({
+        'Content-Range': `bytes */${fileSize}`
+      }).end();
+    }
+
+    res.status(206).set({
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${pkg.dbFile}"`,
+    });
+    fs.createReadStream(dbPath, { start, end }).pipe(res);
+  } else {
+    res.set({
+      'Accept-Ranges': 'bytes',
+      'Content-Length': fileSize,
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${pkg.dbFile}"`,
+    });
+    fs.createReadStream(dbPath).pipe(res);
+  }
 });
 
 // ─── App API: User download tracking ───

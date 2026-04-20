@@ -156,6 +156,8 @@
 
     .copy-all-btn{background:var(--brand);color:#fff;border:none;padding:8px 16px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:600}
     .copy-all-btn:hover{background:var(--brand-deep)}
+    .copy-all-btn.alt{background:#1d4ed8}
+    .copy-all-btn.alt:hover{background:#1e40af}
 
     /* Pagination */
     .pagination{display:flex;gap:6px;justify-content:center;padding:16px;align-items:center}
@@ -316,15 +318,27 @@
                 </div>
               </div>
               <div class="form-row">
-                <div class="form-group" id="resellerGroup" style="display:none">
-                  <label>Reseller Name</label>
-                  <input type="text" id="genReseller" placeholder="e.g. Dr. Ahmed, PharmaCo">
-                  <div class="form-hint">Optional label to track which reseller this bundle belongs to.</div>
+                <div class="form-group">
+                  <label>Recipient Name</label>
+                  <input type="text" id="genRecipientName" placeholder="e.g. Dr. John Smith, MedStore Cairo" required>
+                  <div class="form-hint">Saved with the token so admin can track who the code was generated for.</div>
                 </div>
                 <div class="form-group">
-                  <label>Code Validity Window (days)</label>
-                  <input type="number" id="genExpiry" min="1" max="365" value="90" placeholder="90">
-                  <div class="form-hint">Days before an unused code expires and can no longer be redeemed.</div>
+                  <label>Recipient Email</label>
+                  <input type="email" id="genRecipientEmail" placeholder="name@example.com" required>
+                  <div class="form-hint">Seller or buyer contact used for tracking and PDF export.</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" id="resellerGroup" style="display:none">
+                  <label>Reseller Name</label>
+                  <input type="text" id="genReseller" placeholder="Optional reseller label; defaults to recipient name">
+                  <div class="form-hint">Used as the internal reseller label for bundle reporting.</div>
+                </div>
+                <div class="form-group">
+                  <label>Activation Policy</label>
+                  <input type="text" value="Access duration starts only after first use" disabled>
+                  <div class="form-hint">Unused tokens stay redeemable until they are used or manually revoked.</div>
                 </div>
               </div>
               <button type="submit" class="btn btn-primary" id="generateBtn">&#8853; Generate Tokens</button>
@@ -333,7 +347,10 @@
             <div class="generated-tokens" id="generatedOutput" style="display:none">
               <div class="gen-header">
                 <strong id="generatedTitle">Generated Tokens</strong>
-                <button class="copy-all-btn" onclick="copyAllTokens()">Copy All Codes</button>
+                <div class="btn-group">
+                  <button class="copy-all-btn alt" id="exportPdfBtn" style="display:none" onclick="exportLastGeneratedPdf()">Export PDF</button>
+                  <button class="copy-all-btn" onclick="copyAllTokens()">Copy All Codes</button>
+                </div>
               </div>
               <div id="generatedList"></div>
             </div>
@@ -347,7 +364,7 @@
           <div class="card-header">
             <h2 class="card-title">All Tokens</h2>
             <div class="filter-bar">
-              <input type="text" class="search-input" id="tokenSearch" placeholder="Search by code, user, or email..." oninput="debouncedLoadTokens()">
+              <input type="text" class="search-input" id="tokenSearch" placeholder="Search by code, recipient, user, or email..." oninput="debouncedLoadTokens()">
               <select class="filter-select" id="filterStatus" onchange="loadTokens()">
                 <option value="">All Status</option>
                 <option value="available">Available</option>
@@ -371,10 +388,10 @@
                   <th>Type</th>
                   <th>Duration</th>
                   <th>Status</th>
-                  <th>Assigned To</th>
+                  <th>Requested For</th>
+                  <th>Activated User</th>
                   <th>User Valid Until</th>
                   <th>Used At</th>
-                  <th>Code Expires</th>
                   <th>Created</th>
                   <th style="text-align:right">Actions</th>
                 </tr>
@@ -525,17 +542,17 @@ async function loadStats() {
 
     var exp7El = document.getElementById('sExpiring7');
     if (d.expiring_7_days > 0) {
-      exp7El.textContent = d.expiring_7_days + ' expiring in 7 days';
+      exp7El.textContent = d.expiring_7_days + ' account(s) expiring in 7 days';
       exp7El.className = 'stat-note warn';
     } else {
-      exp7El.textContent = 'No upcoming expiries';
+      exp7El.textContent = 'No upcoming account expiries';
       exp7El.className = 'stat-note';
     }
 
     var banner = document.getElementById('alertBanner');
     if (d.expiring_7_days > 0) {
       document.getElementById('alertText').textContent =
-        d.expiring_7_days + ' user(s) have tokens expiring within 7 days' +
+        d.expiring_7_days + ' token-based account(s) expire within 7 days' +
         (d.expiring_30_days > d.expiring_7_days ? ', ' + d.expiring_30_days + ' within 30 days' : '') + '.';
       banner.classList.add('show');
     } else {
@@ -548,6 +565,8 @@ async function loadStats() {
 
 /* Generate Tokens */
 var lastGeneratedCodes = [];
+var lastGeneratedBatch = null;
+var currentDetailExportPacket = null;
 async function generateTokens(e) {
   e.preventDefault();
   var btn = document.getElementById('generateBtn');
@@ -556,8 +575,15 @@ async function generateTokens(e) {
 
   var body = {
     token_type: document.getElementById('genType').value,
-    duration_type: document.getElementById('genDuration').value
+    duration_type: document.getElementById('genDuration').value,
+    recipient_name: document.getElementById('genRecipientName').value.trim(),
+    recipient_email: document.getElementById('genRecipientEmail').value.trim()
   };
+  if (!body.recipient_name || !body.recipient_email) {
+    toast('Recipient name and email are required', 'error');
+    btn.disabled = false; btn.textContent = '\u2295 Generate Tokens';
+    return;
+  }
   if (body.duration_type === 'custom') {
     body.duration_days = parseInt(document.getElementById('genDays').value);
     if (!body.duration_days || body.duration_days < 1) {
@@ -575,7 +601,6 @@ async function generateTokens(e) {
       return;
     }
   }
-  body.expires_in_days = parseInt(document.getElementById('genExpiry').value) || 90;
 
   try {
     var resp = await fetch('/api/admin/tokens/create', {
@@ -591,11 +616,23 @@ async function generateTokens(e) {
 
     var codes = data.tokens.filter(function(t) { return t.token_type !== 'reseller_bundle'; });
     lastGeneratedCodes = codes.map(function(t) { return t.token_code; });
+    lastGeneratedBatch = {
+      token_type: body.token_type,
+      duration_label: body.duration_type === 'custom' ? body.duration_days + ' days' : durationLabel({ duration_type: body.duration_type, duration_days: body.duration_days || 0 }),
+      recipient_name: body.recipient_name,
+      recipient_email: body.recipient_email,
+      reseller_name: body.reseller_name || body.recipient_name,
+      generated_at: new Date().toISOString(),
+      created_by: '<%= typeof currentAdminUser !== "undefined" ? currentAdminUser : "Admin" %>',
+      tokens: codes
+    };
     var output = document.getElementById('generatedOutput');
     var list = document.getElementById('generatedList');
     var title = document.getElementById('generatedTitle');
+    var exportBtn = document.getElementById('exportPdfBtn');
     var durStr = body.duration_type === 'custom' ? body.duration_days + ' days' : body.duration_type;
     title.textContent = codes.length + ' Token' + (codes.length !== 1 ? 's' : '') + ' Generated \u00B7 ' + durStr;
+    exportBtn.style.display = codes.length > 0 ? '' : 'none';
     list.innerHTML = codes.map(function(t, i) {
       return '<div class="generated-token-item">' +
         '<span style="color:var(--muted);min-width:28px">' + (i + 1) + '.</span>' +
@@ -625,6 +662,65 @@ function copyAllTokens() {
   navigator.clipboard.writeText(lastGeneratedCodes.join('\n')).then(function() {
     toast('All ' + lastGeneratedCodes.length + ' codes copied!', 'success');
   });
+}
+
+function exportTokenPacketPdf(packet) {
+  if (!packet || !packet.tokens || packet.tokens.length === 0) {
+    toast('No generated tokens available to export', 'error');
+    return;
+  }
+
+  var rows = packet.tokens.map(function(t, index) {
+    return '<tr>' +
+      '<td>' + (index + 1) + '</td>' +
+      '<td style="font-family:SFMono-Regular,Consolas,monospace">' + escHtml(t.token_code) + '</td>' +
+      '<td>' + escHtml(typeLabel(t.token_type)) + '</td>' +
+      '<td>' + escHtml(durationLabel(t)) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  var popup = window.open('', '_blank', 'width=960,height=760');
+  if (!popup) {
+    toast('Please allow pop-ups to export PDF', 'error');
+    return;
+  }
+
+  popup.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Token Export</title><style>' +
+    'body{font-family:"Avenir Next","Helvetica Neue",Arial,sans-serif;color:#1d2a2f;padding:32px;line-height:1.45}' +
+    'h1{margin:0 0 6px;font-size:28px} h2{margin:26px 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:#66757e}' +
+    '.meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px;margin:20px 0 28px}' +
+    '.meta-box{padding:12px 14px;border:1px solid #d7e0e5;border-radius:12px;background:#f9fbfb}' +
+    '.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#66757e;font-weight:700;margin-bottom:4px}' +
+    '.value{font-size:15px;font-weight:600}' +
+    'table{width:100%;border-collapse:collapse;margin-top:10px} th,td{border:1px solid #d7e0e5;padding:10px 12px;text-align:left;font-size:13px;vertical-align:top}' +
+    'th{background:#eef6f5;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#486068}' +
+    '.note{margin-top:20px;padding:14px 16px;border-radius:12px;background:#eff6ff;color:#1e3a8a;font-size:13px}' +
+    '@media print{body{padding:20px}.print-hide{display:none}}' +
+  '</style></head><body>' +
+    '<h1>iMD Token Export</h1>' +
+    '<div style="color:#66757e;font-size:14px">Prepared for seller delivery and PDF sharing</div>' +
+    '<div class="meta">' +
+      '<div class="meta-box"><div class="label">Recipient</div><div class="value">' + escHtml(packet.recipient_name || '\u2014') + '</div></div>' +
+      '<div class="meta-box"><div class="label">Recipient Email</div><div class="value">' + escHtml(packet.recipient_email || '\u2014') + '</div></div>' +
+      '<div class="meta-box"><div class="label">Reseller Label</div><div class="value">' + escHtml(packet.reseller_name || packet.recipient_name || '\u2014') + '</div></div>' +
+      '<div class="meta-box"><div class="label">Duration</div><div class="value">' + escHtml(packet.duration_label || '\u2014') + '</div></div>' +
+      '<div class="meta-box"><div class="label">Generated At</div><div class="value">' + escHtml(fmtDateTime(packet.generated_at)) + '</div></div>' +
+      '<div class="meta-box"><div class="label">Generated By</div><div class="value">' + escHtml(packet.created_by || 'Admin') + '</div></div>' +
+    '</div>' +
+    '<h2>Token Codes</h2>' +
+    '<table><thead><tr><th>#</th><th>Token Code</th><th>Type</th><th>Duration</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="note">Access duration starts only when the token is redeemed. Unused tokens remain valid until redeemed or manually revoked by admin.</div>' +
+    '<div class="print-hide" style="margin-top:24px"><button onclick="window.print()" style="padding:10px 16px;border:none;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;cursor:pointer">Print / Save as PDF</button></div>' +
+  '</body></html>');
+  popup.document.close();
+}
+
+function exportLastGeneratedPdf() {
+  exportTokenPacketPdf(lastGeneratedBatch);
+}
+
+function exportCurrentDetailPdf() {
+  exportTokenPacketPdf(currentDetailExportPacket);
 }
 
 /* Load Tokens Table */
@@ -657,13 +753,19 @@ async function loadTokens(page) {
     }
 
     tbody.innerHTML = data.tokens.map(function(t) {
-      // Assigned user info
+      var recipientHtml = '\u2014';
+      if (t.recipient_name || t.recipient_email || t.assigned_to_reseller) {
+        recipientHtml = '<div class="user-info"><span class="user-name">' +
+          escHtml(t.recipient_name || t.assigned_to_reseller || 'Unnamed recipient') + '</span>' +
+          (t.recipient_email ? '<span class="user-email">' + escHtml(t.recipient_email) + '</span>' : '') +
+          (t.assigned_to_reseller && t.assigned_to_reseller !== t.recipient_name ? '<span class="user-email">Reseller: ' + escHtml(t.assigned_to_reseller) + '</span>' : '') +
+          '</div>';
+      }
+
       var assignedHtml = '\u2014';
       if (t.assigned_username) {
         assignedHtml = '<div class="user-info"><span class="user-name">' + escHtml(t.assigned_username) + '</span>' +
           (t.assigned_email ? '<span class="user-email">' + escHtml(t.assigned_email) + '</span>' : '') + '</div>';
-      } else if (t.assigned_to_reseller) {
-        assignedHtml = '<em style="color:var(--warn)">' + escHtml(t.assigned_to_reseller) + '</em>';
       }
 
       // User valid_until
@@ -679,26 +781,15 @@ async function loadTokens(page) {
         }
       }
 
-      // Code expires
-      var expiresHtml = '\u2014';
-      if (t.expires_at) {
-        var expDays = daysFromNow(t.expires_at);
-        if (t.status === 'available' && expDays !== null && expDays <= 14) {
-          expiresHtml = '<span style="color:var(--warn)">' + fmtDate(t.expires_at) + '</span>';
-        } else {
-          expiresHtml = fmtDate(t.expires_at);
-        }
-      }
-
       return '<tr>' +
         '<td><span class="token-code" title="Click to copy: ' + escHtml(t.token_code) + '" onclick="copyCode(\'' + t.token_code + '\')">' + escHtml(t.token_code.substring(0, 14)) + '\u2026</span></td>' +
         '<td><span class="badge badge-' + t.token_type + '">' + escHtml(typeLabel(t.token_type)) + '</span></td>' +
         '<td>' + escHtml(durationLabel(t)) + '</td>' +
         '<td><span class="badge badge-' + t.status + '">' + t.status + '</span></td>' +
+        '<td>' + recipientHtml + '</td>' +
         '<td>' + assignedHtml + '</td>' +
         '<td class="date-cell">' + validUntilHtml + '</td>' +
         '<td class="date-cell">' + (t.used_at ? fmtDate(t.used_at) : '\u2014') + '</td>' +
-        '<td class="date-cell">' + expiresHtml + '</td>' +
         '<td class="date-cell">' + fmtDate(t.created_at) + (t.created_by ? '<br><span style="font-size:10px;color:var(--muted)">' + escHtml(t.created_by) + '</span>' : '') + '</td>' +
         '<td style="text-align:right"><div class="btn-group" style="justify-content:flex-end">' +
           '<button class="btn btn-sm btn-secondary" onclick="viewToken(' + t.id + ')" title="View details">View</button>' +
@@ -745,7 +836,8 @@ async function viewToken(id) {
     html += '<div class="detail-item"><div class="detail-label">Type</div><div class="detail-value"><span class="badge badge-' + t.token_type + '">' + escHtml(typeLabel(t.token_type)) + '</span></div></div>';
     html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value"><span class="badge badge-' + t.status + '">' + t.status + '</span></div></div>';
     html += '<div class="detail-item"><div class="detail-label">Duration</div><div class="detail-value">' + escHtml(t.duration_type) + ' (' + t.duration_days + ' days)</div></div>';
-    html += '<div class="detail-item"><div class="detail-label">Code Expires</div><div class="detail-value">' + fmtDateTime(t.expires_at) + '</div></div>';
+    html += '<div class="detail-item"><div class="detail-label">Recipient Name</div><div class="detail-value">' + escHtml(t.recipient_name || t.assigned_to_reseller || '\u2014') + '</div></div>';
+    html += '<div class="detail-item"><div class="detail-label">Recipient Email</div><div class="detail-value">' + escHtml(t.recipient_email || '\u2014') + '</div></div>';
     html += '<div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">' + fmtDateTime(t.created_at) + '</div></div>';
     html += '<div class="detail-item"><div class="detail-label">Created By</div><div class="detail-value">' + escHtml(t.created_by || '\u2014') + '</div></div>';
     html += '</div></div>';
@@ -753,7 +845,7 @@ async function viewToken(id) {
     // Assignment section
     if (t.assigned_username || t.assigned_to_reseller || t.used_at) {
       html += '<div class="detail-section"><div class="detail-section-title">Assignment</div><div class="detail-grid">';
-      html += '<div class="detail-item"><div class="detail-label">Assigned User</div><div class="detail-value">' +
+      html += '<div class="detail-item"><div class="detail-label">Activated User</div><div class="detail-value">' +
         (t.assigned_username ? escHtml(t.assigned_username) : '\u2014') + '</div></div>';
       html += '<div class="detail-item"><div class="detail-label">User Email</div><div class="detail-value">' +
         (t.assigned_email ? escHtml(t.assigned_email) : '\u2014') + '</div></div>';
@@ -807,13 +899,26 @@ async function viewToken(id) {
     body.innerHTML = html;
     document.getElementById('modalTitle').textContent = 'Token: ' + t.token_code.substring(0, 8) + '\u2026';
 
+    currentDetailExportPacket = {
+      token_type: t.token_type,
+      duration_label: durationLabel(t),
+      recipient_name: t.recipient_name,
+      recipient_email: t.recipient_email,
+      reseller_name: t.assigned_to_reseller,
+      generated_at: t.created_at,
+      created_by: t.created_by,
+      tokens: data.children && data.children.length > 0 ? data.children : [t]
+    };
+
     // Show revoke in footer if applicable
     var footer = document.getElementById('modalFooter');
     if (t.status !== 'revoked') {
-      footer.innerHTML = '<button class="btn btn-danger" onclick="revokeToken(' + t.id + ');closeModal()">Revoke Token</button>' +
+      footer.innerHTML = '<button class="btn btn-secondary" onclick="exportCurrentDetailPdf()">Export PDF</button>' +
+        '<button class="btn btn-danger" onclick="revokeToken(' + t.id + ');closeModal()">Revoke Token</button>' +
         '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
     } else {
-      footer.innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+      footer.innerHTML = '<button class="btn btn-secondary" onclick="exportCurrentDetailPdf()">Export PDF</button>' +
+        '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
     }
   } catch (err) {
     body.innerHTML = '<p style="color:var(--danger)">Failed to load token details</p>';
@@ -821,6 +926,7 @@ async function viewToken(id) {
 }
 
 function closeModal() {
+  currentDetailExportPacket = null;
   document.getElementById('detailModal').classList.remove('open');
 }
 

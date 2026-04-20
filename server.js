@@ -2134,11 +2134,47 @@ const MYSQL_CONFIG = {
 };
 
 let mysqlPool = null;
+let tokenSchemaReadyPromise = null;
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+async function ensureTokenSchema(pool) {
+  const [[tableRow]] = await pool.execute(
+    `SELECT COUNT(*) AS tableCount
+     FROM INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'tokens'`
+  );
+  if (!tableRow || !tableRow.tableCount) return;
+
+  const [columns] = await pool.execute(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'tokens'
+       AND COLUMN_NAME IN ('recipient_name', 'recipient_email')`
+  );
+  const existingColumns = new Set(columns.map((column) => column.COLUMN_NAME));
+
+  if (!existingColumns.has('recipient_name')) {
+    await pool.execute('ALTER TABLE tokens ADD COLUMN recipient_name VARCHAR(255) NULL AFTER assigned_to_reseller');
+  }
+  if (!existingColumns.has('recipient_email')) {
+    await pool.execute('ALTER TABLE tokens ADD COLUMN recipient_email VARCHAR(255) NULL AFTER recipient_name');
+  }
+}
 
 async function getMysqlPool() {
   if (!mysqlPool) {
     mysqlPool = mysql.createPool(MYSQL_CONFIG);
+    tokenSchemaReadyPromise = ensureTokenSchema(mysqlPool).catch((err) => {
+      tokenSchemaReadyPromise = null;
+      throw err;
+    });
   }
+  if (tokenSchemaReadyPromise) await tokenSchemaReadyPromise;
   return mysqlPool;
 }
 
@@ -4275,7 +4311,7 @@ function requireActiveSubscription(req, res, next) {
 
 // POST /api/admin/tokens/create — Create single-user tokens or reseller bundles
 app.post('/api/admin/tokens/create', requireAdmin, async (req, res) => {
-  const { token_type, duration_type, duration_days, quantity, reseller_name, expires_in_days } = req.body || {};
+  const { token_type, duration_type, duration_days, quantity, reseller_name, recipient_name, recipient_email } = req.body || {};
 
   if (!token_type || !duration_type) {
     return res.status(400).json({ error: 'token_type and duration_type are required' });
@@ -4298,9 +4334,15 @@ app.post('/api/admin/tokens/create', requireAdmin, async (req, res) => {
     }
   }
 
-  // Token code validity window (how long before an unused code expires)
-  const codeValidityDays = parseInt(expires_in_days) || 90;
-  const expiresAt = new Date(Date.now() + codeValidityDays * 86400000);
+  const cleanRecipientName = String(recipient_name || '').trim();
+  const cleanRecipientEmail = String(recipient_email || '').trim().toLowerCase();
+  if (!cleanRecipientName || !cleanRecipientEmail) {
+    return res.status(400).json({ error: 'recipient_name and recipient_email are required' });
+  }
+  if (!isValidEmail(cleanRecipientEmail)) {
+    return res.status(400).json({ error: 'recipient_email must be a valid email address' });
+  }
+
   const adminUser = getAdminSettings().username;
 
   try {
@@ -4311,40 +4353,40 @@ app.post('/api/admin/tokens/create', requireAdmin, async (req, res) => {
       // Generate one single-use token
       const tokenCode = crypto.randomUUID();
       await pool.execute(
-        'INSERT INTO tokens (token_code, token_type, duration_type, duration_days, status, expires_at, created_by, assigned_to_reseller) VALUES (?,?,?,?,?,?,?,?)',
-        [tokenCode, 'single', duration_type, calcDays, 'available', expiresAt, adminUser, null]
+        'INSERT INTO tokens (token_code, token_type, duration_type, duration_days, status, created_by, assigned_to_reseller, recipient_name, recipient_email) VALUES (?,?,?,?,?,?,?,?,?)',
+        [tokenCode, 'single', duration_type, calcDays, 'available', adminUser, null, cleanRecipientName, cleanRecipientEmail]
       );
-      generatedTokens.push({ token_code: tokenCode, token_type: 'single', duration_days: calcDays, status: 'available' });
+      generatedTokens.push({ token_code: tokenCode, token_type: 'single', duration_days: calcDays, status: 'available', recipient_name: cleanRecipientName, recipient_email: cleanRecipientEmail });
 
     } else if (token_type === 'reseller_bundle') {
       const qty = parseInt(quantity);
       if (!qty || qty < 1 || qty > 1000) {
         return res.status(400).json({ error: 'quantity must be between 1 and 1000 for reseller_bundle' });
       }
-      const resellerLabel = String(reseller_name || '').trim() || null;
+      const resellerLabel = String(reseller_name || '').trim() || cleanRecipientName;
 
       // Create the parent bundle record
       const bundleCode = crypto.randomUUID();
       const [bundleResult] = await pool.execute(
-        'INSERT INTO tokens (token_code, token_type, duration_type, duration_days, status, expires_at, created_by, assigned_to_reseller) VALUES (?,?,?,?,?,?,?,?)',
-        [bundleCode, 'reseller_bundle', duration_type, calcDays, 'available', expiresAt, adminUser, resellerLabel]
+        'INSERT INTO tokens (token_code, token_type, duration_type, duration_days, status, created_by, assigned_to_reseller, recipient_name, recipient_email) VALUES (?,?,?,?,?,?,?,?,?)',
+        [bundleCode, 'reseller_bundle', duration_type, calcDays, 'available', adminUser, resellerLabel, cleanRecipientName, cleanRecipientEmail]
       );
       const bundleId = bundleResult.insertId;
 
-      generatedTokens.push({ id: bundleId, token_code: bundleCode, token_type: 'reseller_bundle', duration_days: calcDays, status: 'available', quantity: qty });
+      generatedTokens.push({ id: bundleId, token_code: bundleCode, token_type: 'reseller_bundle', duration_days: calcDays, status: 'available', quantity: qty, assigned_to_reseller: resellerLabel, recipient_name: cleanRecipientName, recipient_email: cleanRecipientEmail });
 
       // Create individual reseller unit tokens
       for (let i = 0; i < qty; i++) {
         const unitCode = crypto.randomUUID();
         await pool.execute(
-          'INSERT INTO tokens (token_code, token_type, parent_bundle_id, duration_type, duration_days, status, expires_at, created_by, assigned_to_reseller) VALUES (?,?,?,?,?,?,?,?,?)',
-          [unitCode, 'reseller_unit', bundleId, duration_type, calcDays, 'available', expiresAt, adminUser, resellerLabel]
+          'INSERT INTO tokens (token_code, token_type, parent_bundle_id, duration_type, duration_days, status, created_by, assigned_to_reseller, recipient_name, recipient_email) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [unitCode, 'reseller_unit', bundleId, duration_type, calcDays, 'available', adminUser, resellerLabel, cleanRecipientName, cleanRecipientEmail]
         );
-        generatedTokens.push({ token_code: unitCode, token_type: 'reseller_unit', parent_bundle_id: bundleId, duration_days: calcDays, status: 'available' });
+        generatedTokens.push({ token_code: unitCode, token_type: 'reseller_unit', parent_bundle_id: bundleId, duration_days: calcDays, status: 'available', assigned_to_reseller: resellerLabel, recipient_name: cleanRecipientName, recipient_email: cleanRecipientEmail });
       }
     }
 
-    await logAdminAction(adminUser, 'create_tokens', 'tokens', null, JSON.stringify({ token_type, duration_type, count: generatedTokens.length }), req.ip);
+    await logAdminAction(adminUser, 'create_tokens', 'tokens', null, JSON.stringify({ token_type, duration_type, count: generatedTokens.length, recipient_name: cleanRecipientName, recipient_email: cleanRecipientEmail }), req.ip);
     res.json({ success: true, tokens: generatedTokens });
   } catch (err) {
     console.error('Token creation error:', err.message);
@@ -4367,7 +4409,10 @@ app.get('/api/admin/tokens', requireAdmin, async (req, res) => {
     if (status) { where.push('t.status = ?'); params.push(status); }
     if (type) { where.push('t.token_type = ?'); params.push(type); }
     if (reseller) { where.push('t.assigned_to_reseller = ?'); params.push(reseller); }
-    if (search) { where.push('(t.token_code LIKE ? OR u.username LIKE ? OR u.email LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+    if (search) {
+      where.push('(t.token_code LIKE ? OR t.recipient_name LIKE ? OR t.recipient_email LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
 
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
 
@@ -4513,7 +4558,7 @@ app.post('/api/auth/validate-token', tokenRateLimit, express.json(), async (req,
   }
   try {
     const pool = await getMysqlPool();
-    const [[token]] = await pool.execute('SELECT status, expires_at, token_type, duration_days FROM tokens WHERE token_code = ?', [String(token_code).trim()]);
+    const [[token]] = await pool.execute('SELECT status, token_type, duration_days, recipient_name, recipient_email FROM tokens WHERE token_code = ?', [String(token_code).trim()]);
     if (!token) {
       return res.json({ valid: false, error: 'Invalid token code' });
     }
@@ -4524,11 +4569,7 @@ app.post('/api/auth/validate-token', tokenRateLimit, express.json(), async (req,
       const msg = token.status === 'revoked' ? 'This token has been revoked' : token.status === 'expired' ? 'This token has expired' : 'This token has already been used';
       return res.json({ valid: false, error: msg });
     }
-    if (token.expires_at && new Date(token.expires_at) < new Date()) {
-      await pool.execute("UPDATE tokens SET status = 'expired' WHERE token_code = ?", [String(token_code).trim()]);
-      return res.json({ valid: false, error: 'This token has expired' });
-    }
-    return res.json({ valid: true, duration_days: token.duration_days });
+    return res.json({ valid: true, duration_days: token.duration_days, recipient_name: token.recipient_name, recipient_email: token.recipient_email });
   } catch (err) {
     console.error('Token validation error:', err);
     return res.status(500).json({ valid: false, error: 'Server error' });
@@ -4555,7 +4596,7 @@ app.post('/api/auth/register-with-token', tokenRateLimit, express.json(), async 
     if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
     return res.status(400).json({ error: err });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+  if (!isValidEmail(String(email).trim())) {
     const err = 'Please enter a valid email address';
     if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
     return res.status(400).json({ error: err });
@@ -4593,13 +4634,6 @@ app.post('/api/auth/register-with-token', tokenRateLimit, express.json(), async 
     }
     if (token.status !== 'available') {
       const err = token.status === 'revoked' ? 'This token has been revoked' : token.status === 'expired' ? 'This token has expired' : 'This token has already been used';
-      if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
-      return res.status(400).json({ error: err });
-    }
-    if (token.expires_at && new Date(token.expires_at) < new Date()) {
-      // Mark as expired if not already
-      await pool.execute("UPDATE tokens SET status = 'expired' WHERE id = ?", [token.id]);
-      const err = 'This token has expired';
       if (wantsHtmlResponse(req)) return res.render('signup', { error: err, success: '' });
       return res.status(400).json({ error: err });
     }
@@ -4703,10 +4737,6 @@ app.post('/api/account/extend', requireAppAuth, tokenRateLimit, async (req, res)
     if (token.status !== 'available') {
       const msg = token.status === 'revoked' ? 'This token has been revoked' : token.status === 'expired' ? 'This token has expired' : 'This token has already been used';
       return res.status(400).json({ error: msg });
-    }
-    if (token.expires_at && new Date(token.expires_at) < new Date()) {
-      await pool.execute("UPDATE tokens SET status = 'expired' WHERE id = ?", [token.id]);
-      return res.status(400).json({ error: 'This token has expired' });
     }
 
     // Calculate new valid_until: extend from current expiry or from now if already expired
@@ -4827,15 +4857,7 @@ setInterval(async () => {
       console.log(`[Cron] Expired ${expired.length} subscriptions`);
     }
 
-    // 2. Expire unused token codes past their expires_at
-    const [expiredTokens] = await pool.execute(
-      "UPDATE tokens SET status = 'expired' WHERE status = 'available' AND expires_at IS NOT NULL AND expires_at < NOW()"
-    );
-    if (expiredTokens.affectedRows > 0) {
-      console.log(`[Cron] Expired ${expiredTokens.affectedRows} unused token codes`);
-    }
-
-    // 3. Expire token-based user accounts past their valid_until
+    // 2. Expire token-based user accounts past their valid_until
     const [expiredAccounts] = await pool.execute(
       "SELECT id, username FROM users WHERE valid_until IS NOT NULL AND valid_until < NOW() AND account_status = 'active'"
     );
